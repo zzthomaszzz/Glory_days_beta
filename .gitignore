@@ -1,9 +1,12 @@
-# Whitelist — only track the distributable (asset folder + compiled exe)
-# Source code, server, shared logic, etc. are all excluded
-*
-
-!.gitignore
-!asset/
-!asset/**
-!dist/
-!dist/**
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+dist/
+build/
+*.spec
+.idea/
+.DS_Store
+Thumbs.db
