@@ -78,6 +78,8 @@ class Player(EntityBase):
         self.stun_timer  = 0.0
         self.slow_timer  = 0.0
         self.slow_factor = 1.0
+        self.armor_reduction       = 0
+        self.armor_reduction_timer = 0.0
 
     def to_dict(self):
         return {

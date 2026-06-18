@@ -1,5 +1,5 @@
 from shared.constants import ATTACK_WINDUP
-from server.projectiles import Projectile, apply_damage
+from server.projectiles import Projectile, apply_damage, apply_on_hit_effects
 
 
 def resolve_combat(players, buildings, player_turrets, dt, projectiles, proj_counter):
@@ -49,6 +49,7 @@ def resolve_combat(players, buildings, player_turrets, dt, projectiles, proj_cou
                 )
             else:
                 apply_damage(target, player.attack_damage, target.armor, killer=player)
+                apply_on_hit_effects(player, target)
 
 
 def resolve_turret_combat(player_turrets, players, dt, projectiles, proj_counter):

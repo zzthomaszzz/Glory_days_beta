@@ -31,6 +31,9 @@ class Projectile:
         if dist <= step:
             killer = players.get(self.owner_id) if self.target_type == "player" else None
             apply_damage(target, self.damage, self.armor, killer=killer)
+            owner = players.get(self.owner_id)
+            if owner:
+                apply_on_hit_effects(owner, target)
             self.is_done = True
         else:
             self.x += (dx / dist) * step
@@ -89,8 +92,17 @@ def _resolve_target(target_type, target_id, players, buildings, player_turrets):
     return None
 
 
+def apply_on_hit_effects(attacker, target):
+    if not hasattr(target, 'armor_reduction_timer'):
+        return
+    if any(item and item.get('name') == 'Fang' for item in getattr(attacker, 'inventory', [])):
+        target.armor_reduction = 10
+        target.armor_reduction_timer = 3.0
+
+
 def apply_damage(target, raw_damage, armor, killer=None):
-    damage = max(1, raw_damage - armor)
+    effective_armor = max(0, armor - getattr(target, 'armor_reduction', 0))
+    damage = max(1, raw_damage - effective_armor)
     target.hp -= damage
     if target.hp <= 0:
         target.hp = 0

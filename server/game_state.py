@@ -157,9 +157,11 @@ class GameState:
             player.is_dead        = False
             player.respawn_timer  = 0.0
             player.attack_target  = None
-            player.stun_timer     = 0.0
-            player.slow_timer     = 0.0
-            player.slow_factor    = 1.0
+            player.stun_timer          = 0.0
+            player.slow_timer          = 0.0
+            player.slow_factor         = 1.0
+            player.armor_reduction     = 0
+            player.armor_reduction_timer = 0.0
             for ab in player.abilities:
                 if ab:
                     ab.is_on_cooldown = False
@@ -194,6 +196,10 @@ class GameState:
                 player.slow_timer = max(0.0, player.slow_timer - dt)
                 if player.slow_timer <= 0:
                     player.slow_factor = 1.0
+            if player.armor_reduction_timer > 0:
+                player.armor_reduction_timer = max(0.0, player.armor_reduction_timer - dt)
+                if player.armor_reduction_timer <= 0:
+                    player.armor_reduction = 0
         apply_movement(self.players, dt)
         update_abilities(self.players, dt, game_state=self)
         resolve_combat(self.players, self.buildings, self.player_turrets, dt, self.projectiles, self._proj_counter)

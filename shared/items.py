@@ -29,6 +29,12 @@ ITEMS = {
         "label":  "BOT",
         "desc":   "+30 Move Speed",
     },
+    "Fang": {
+        "cost":   80,
+        "stats":  {"attack_damage": 20},
+        "label":  "FNG",
+        "desc":   "+20 Damage  -10 enemy armor on hit (3s)",
+    },
 }
 
 ITEM_KEYS = list(ITEMS.keys())
