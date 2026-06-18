@@ -485,3 +485,229 @@ class PlaceTurret(AbilityBase):
         d["max_turrets"]  = self.max_turrets
         d["place_range"]  = self.place_range
         return d
+
+
+#-------------------------------------------------------------------------------------------------------------------Blitz
+class Blitz(AbilityBase):
+    cooldown   = 7.0
+    mana_cost  = 60
+    cast_range = 220
+    damage     = 35
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player) or game_state is None:
+            return False
+        if not targets:
+            return False
+        target = game_state.players.get(targets[0])
+        if not target or target.is_dead or target.team == player.team:
+            return False
+        dx, dy = target.x - player.x, target.y - player.y
+        if dx * dx + dy * dy > self.cast_range ** 2:
+            return False
+        player.mana         -= self.mana_cost
+        self.is_on_cooldown  = True
+        self.cooldown_timer  = self.cooldown
+        self._blitz(player, target)
+        return True
+
+    def _blitz(self, player, target):
+        import pygame
+        from shared.map_data import OBSTACLES
+        from server.projectiles import apply_damage
+        dx, dy    = target.x - player.x, target.y - player.y
+        dist      = math.sqrt(dx * dx + dy * dy)
+        if dist < 1:
+            return
+        ux, uy    = dx / dist, dy / dist
+        stop_dist = max(0, dist - player.size)
+        half      = player.size // 2
+        nx, ny    = player.x, player.y
+        for _ in range(max(1, int(stop_dist))):
+            tx2 = nx + ux
+            ty2 = ny + uy
+            pr  = pygame.Rect(int(tx2 - half), int(ty2 - half), player.size, player.size)
+            if any(obs.colliderect(pr) for obs in OBSTACLES):
+                break
+            nx, ny = tx2, ty2
+        player.x, player.y = nx, ny
+        apply_damage(target, self.damage, target.armor, killer=player)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_targeted"] = True
+        d["cast_range"]  = self.cast_range
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------Whirlwind
+class Whirlwind(AbilityBase):
+    cooldown  = 9.0
+    mana_cost = 70
+    radius    = 90
+    damage    = 70
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player) or game_state is None:
+            return False
+        from server.projectiles import apply_damage
+        player.mana         -= self.mana_cost
+        self.is_on_cooldown  = True
+        self.cooldown_timer  = self.cooldown
+        r2 = self.radius ** 2
+        for p in game_state.players.values():
+            if p.is_dead or p.team == player.team:
+                continue
+            dx, dy = p.x - player.x, p.y - player.y
+            if dx * dx + dy * dy <= r2:
+                apply_damage(p, self.damage, p.armor, killer=player)
+        return True
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["slam_radius"] = self.radius
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------Adrenaline
+class Adrenaline(AbilityBase):
+    cooldown      = 14.0
+    mana_cost     = 50
+    atk_spd_bonus = 0.6
+    duration      = 4.0
+
+    def __init__(self):
+        super().__init__()
+        self.is_active      = False
+        self.duration_timer = 0.0
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player):
+            return False
+        player.mana         -= self.mana_cost
+        self.is_on_cooldown  = True
+        self.cooldown_timer  = self.cooldown
+        self.is_active       = True
+        self.duration_timer  = self.duration
+        player.attack_speed += self.atk_spd_bonus
+        return True
+
+    def tick(self, dt, player, game_state):
+        if not self.is_active:
+            return
+        self.duration_timer -= dt
+        if self.duration_timer <= 0:
+            self.is_active       = False
+            self.duration_timer  = 0.0
+            player.attack_speed -= self.atk_spd_bonus
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_active"]      = self.is_active
+        d["duration_timer"] = round(self.duration_timer, 2)
+        d["duration"]       = self.duration
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------ShieldBash
+class ShieldBash(AbilityBase):
+    cooldown      = 8.0
+    mana_cost     = 55
+    radius        = 80
+    damage        = 30
+    slow_factor   = 0.5
+    slow_duration = 2.0
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player) or game_state is None:
+            return False
+        from server.projectiles import apply_damage
+        player.mana         -= self.mana_cost
+        self.is_on_cooldown  = True
+        self.cooldown_timer  = self.cooldown
+        r2 = self.radius ** 2
+        for p in game_state.players.values():
+            if p.is_dead or p.team == player.team:
+                continue
+            dx, dy = p.x - player.x, p.y - player.y
+            if dx * dx + dy * dy <= r2:
+                apply_damage(p, self.damage, p.armor, killer=player)
+                p.slow_timer  = self.slow_duration
+                p.slow_factor = self.slow_factor
+        return True
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["slam_radius"] = self.radius
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------IronWall
+class IronWall(AbilityBase):
+    cooldown    = 16.0
+    mana_cost   = 70
+    armor_bonus = 50
+    mr_bonus    = 40
+    duration    = 3.5
+
+    def __init__(self):
+        super().__init__()
+        self.is_active      = False
+        self.duration_timer = 0.0
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player):
+            return False
+        player.mana         -= self.mana_cost
+        self.is_on_cooldown  = True
+        self.cooldown_timer  = self.cooldown
+        self.is_active       = True
+        self.duration_timer  = self.duration
+        player.armor        += self.armor_bonus
+        player.magic_resist += self.mr_bonus
+        return True
+
+    def tick(self, dt, player, game_state):
+        if not self.is_active:
+            return
+        self.duration_timer -= dt
+        if self.duration_timer <= 0:
+            self.is_active       = False
+            self.duration_timer  = 0.0
+            player.armor        -= self.armor_bonus
+            player.magic_resist -= self.mr_bonus
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_active"]      = self.is_active
+        d["duration_timer"] = round(self.duration_timer, 2)
+        d["duration"]       = self.duration
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------Warcry
+class Warcry(AbilityBase):
+    cooldown  = 20.0
+    mana_cost = 80
+    radius    = 110
+    stun_dur  = 1.2
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player) or game_state is None:
+            return False
+        player.mana         -= self.mana_cost
+        self.is_on_cooldown  = True
+        self.cooldown_timer  = self.cooldown
+        r2 = self.radius ** 2
+        for p in game_state.players.values():
+            if p.is_dead or p.team == player.team:
+                continue
+            dx, dy = p.x - player.x, p.y - player.y
+            if dx * dx + dy * dy <= r2:
+                p.stun_timer = self.stun_dur
+        return True
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["slam_radius"] = self.radius
+        return d

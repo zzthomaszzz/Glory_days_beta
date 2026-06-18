@@ -156,11 +156,42 @@ class Hunter(Player):
     default_abilities  = [Charge, GroundSlam, Fortify]
 
 
+#-------------------------------------------------------------------------------------------------------------------Vanguard
+class Vanguard(Player):
+    BASE_HP            = 470
+    BASE_ATTACK_DAMAGE = 68
+    BASE_ATTACK_RANGE  = 55
+    BASE_ATTACK_SPEED  = 1.05
+    BASE_ARMOR         = 20
+    BASE_SPEED         = 128
+    is_ranged          = False
+    proj_speed         = 0
+
+    default_abilities  = [Blitz, Whirlwind, Adrenaline]
+
+
+#-------------------------------------------------------------------------------------------------------------------Warden
+class Warden(Player):
+    BASE_HP            = 640
+    BASE_ATTACK_DAMAGE = 42
+    BASE_ATTACK_RANGE  = 52
+    BASE_ATTACK_SPEED  = 0.62
+    BASE_ARMOR         = 48
+    BASE_MAGIC_RESIST  = 38
+    BASE_SPEED         = 88
+    is_ranged          = False
+    proj_speed         = 0
+
+    default_abilities  = [ShieldBash, IronWall, Warcry]
+
+
 #-------------------------------------------------------------------------------------------------------------------Registry
 HERO_REGISTRY = {
-    "Soldier": Soldier,
-    "Mage":    Mage,
-    "Hunter":  Hunter,
+    "Soldier":  Soldier,
+    "Mage":     Mage,
+    "Hunter":   Hunter,
+    "Vanguard": Vanguard,
+    "Warden":   Warden,
 }
 
 

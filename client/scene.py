@@ -40,10 +40,12 @@ _EDGE_ZONE  = 15
 _EDGE_SPEED = 220
 
 HERO_ASSET_MAP = {
-    "Soldier": os.path.join(_ROOT, "asset", "soldier.png"),
-    "Mage":    os.path.join(_ROOT, "asset", "mage.png"),
-    "Hunter":  os.path.join(_ROOT, "asset", "hunter.png"),
-    "Player":  os.path.join(_ROOT, "asset", "default_player.png"),
+    "Soldier":  os.path.join(_ROOT, "asset",  "soldier.png"),
+    "Mage":     os.path.join(_ROOT, "asset",  "mage.png"),
+    "Hunter":   os.path.join(_ROOT, "asset",  "hunter.png"),
+    "Vanguard": os.path.join(_ROOT, "assets", "vanguard.png"),
+    "Warden":   os.path.join(_ROOT, "assets", "warden.png"),
+    "Player":   os.path.join(_ROOT, "asset",  "default_player.png"),
 }
 
 _HERO_CARDS = [
@@ -77,6 +79,26 @@ _HERO_CARDS = [
             ("R", "Fortify",     "Gain damage reduction for 5 seconds"),
         ],
     },
+    {
+        "name":  "Vanguard",
+        "desc":  "Fast skirmisher who dashes in and spins through enemies.",
+        "stats": {"HP": 470, "Damage": 68, "Range": 55, "Speed": 128, "Armor": 20},
+        "abilities": [
+            ("Q", "Blitz",      "Dash to an enemy dealing 35 bonus damage"),
+            ("E", "Whirlwind",  "Spin dealing 70 damage to all nearby"),
+            ("R", "Adrenaline", "+0.6 attack speed for 4 seconds"),
+        ],
+    },
+    {
+        "name":  "Warden",
+        "desc":  "Immovable tank who locks down enemies with CC.",
+        "stats": {"HP": 640, "Damage": 42, "Range": 52, "Speed": 88, "Armor": 48},
+        "abilities": [
+            ("Q", "Shield Bash", "AOE bash dealing 30 dmg + 50% slow for 2s"),
+            ("E", "Iron Wall",   "+50 armor and +40 MR for 3.5 seconds"),
+            ("R", "Warcry",      "Stun all nearby enemies for 1.2 seconds"),
+        ],
+    },
 ]
 
 
@@ -85,12 +107,27 @@ def _hs_layout():
     left_w  = sw * 2 // 3
     right_w = sw - left_w
 
-    n      = len(_HERO_CARDS)
-    pad    = int(left_w * 0.06)
-    gap    = int(left_w * 0.025)
-    card_w = (left_w - 2 * pad - (n - 1) * gap) // n
-    card_h = int(sh * 0.52)
-    card_y = int(sh * 0.20)
+    n       = len(_HERO_CARDS)
+    COLS    = 3
+    rows    = math.ceil(n / COLS)
+    pad     = int(left_w * 0.05)
+    gap     = int(left_w * 0.02)
+    row_gap = 10
+
+    card_w  = (left_w - 2 * pad - (COLS - 1) * gap) // COLS
+    avail_h = int(sh * 0.68)
+    card_h  = min(int(sh * 0.50), (avail_h - (rows - 1) * row_gap) // rows)
+    card_y  = int(sh * 0.18)
+
+    cards = []
+    for i in range(n):
+        col              = i % COLS
+        row              = i // COLS
+        cards_in_row     = min(COLS, n - row * COLS)
+        row_x_offset     = (COLS - cards_in_row) * (card_w + gap) // 2
+        cx = pad + row_x_offset + col * (card_w + gap)
+        cy = card_y + row * (card_h + row_gap)
+        cards.append(pygame.Rect(cx, cy, card_w, card_h))
 
     right_cx = left_w + right_w // 2
     btn_w    = int(right_w * 0.62)
@@ -98,15 +135,15 @@ def _hs_layout():
     btn_x    = right_cx - btn_w // 2
     btn_y    = int(sh * 0.88)
 
+    last_card_bottom = card_y + rows * card_h + (rows - 1) * row_gap
     inp_w = int(left_w * 0.32)
     inp_h = int(sh * 0.038)
     inp_x = (left_w - inp_w) // 2
-    inp_y = card_y + card_h + int(sh * 0.04)
+    inp_y = last_card_bottom + int(sh * 0.03)
 
     return {
         "left_w": left_w, "right_w": right_w,
-        "n": n, "pad": pad, "gap": gap,
-        "card_w": card_w, "card_h": card_h, "card_y": card_y,
+        "cards": cards, "card_w": card_w, "card_h": card_h,
         "btn_w": btn_w, "btn_h": btn_h, "btn_x": btn_x, "btn_y": btn_y,
         "inp_w": inp_w, "inp_h": inp_h, "inp_x": inp_x, "inp_y": inp_y,
     }
@@ -124,16 +161,12 @@ class SceneHeroSelect:
         self._cursor_vis   = True
 
         lay = _hs_layout()
-        sw, sh   = _SCREEN_W, _SCREEN_H
-        left_w   = lay["left_w"]
-        cw, ch   = lay["card_w"], lay["card_h"]
-        pad, gap = lay["pad"], lay["gap"]
+        sw, sh = _SCREEN_W, _SCREEN_H
+        left_w = lay["left_w"]
+        cw, ch = lay["card_w"], lay["card_h"]
         self._left_w = left_w
 
-        self._card_rects_ui = [
-            pygame.Rect(pad + i * (cw + gap), lay["card_y"], cw, ch)
-            for i in range(len(_HERO_CARDS))
-        ]
+        self._card_rects_ui = lay["cards"]
         self._btn_rect_ui   = pygame.Rect(lay["btn_x"], lay["btn_y"], lay["btn_w"], lay["btn_h"])
         self._input_rect_ui = pygame.Rect(lay["inp_x"], lay["inp_y"], lay["inp_w"], lay["inp_h"])
 
