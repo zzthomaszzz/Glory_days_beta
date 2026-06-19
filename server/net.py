@@ -38,12 +38,23 @@ class GameServer:
         team = 1 if player_id % 2 == 0 else 2
 
         try:
-            hero_line = await asyncio.wait_for(reader.readline(), timeout=15.0)
-            if not hero_line:
-                writer.close()
-                return
-            hero_msg = json.loads(hero_line.decode())
-            hero_name = hero_msg.get("hero", "Player") if hero_msg.get("type") == "hero_select" else "Player"
+            hero_name = "Player"
+            deadline = asyncio.get_event_loop().time() + 15.0
+            while True:
+                remaining = max(0.1, deadline - asyncio.get_event_loop().time())
+                hero_line = await asyncio.wait_for(reader.readline(), timeout=remaining)
+                if not hero_line:
+                    writer.close()
+                    return
+                stripped = hero_line.strip()
+                if not stripped:
+                    continue
+                try:
+                    hero_msg = json.loads(stripped.decode())
+                    hero_name = hero_msg.get("hero", "Player") if hero_msg.get("type") == "hero_select" else "Player"
+                    break
+                except Exception:
+                    continue
         except Exception as e:
             print(f"[!] Player {player_id} handshake failed: {e}")
             writer.close()
