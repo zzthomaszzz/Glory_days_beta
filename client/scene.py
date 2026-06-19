@@ -406,22 +406,29 @@ class SceneConnecting:
         else:
             self._host = raw or CLIENT_DEFAULT_HOST
             self._port = SERVER_PORT
+        self._error = None
         asyncio.create_task(self._connect())
 
     async def _connect(self):
-        client = NetworkClient(self._host, self._port, SNAPSHOT_INTERVAL)
-        await client.connect()
-        asyncio.create_task(client.receive_loop())
-        await client.wait_for_welcome()
-        await client.send_hero_select(self._hero_name)
-        self.next_scene = SceneTest(client)
+        try:
+            client = NetworkClient(self._host, self._port, SNAPSHOT_INTERVAL)
+            await client.connect()
+            asyncio.create_task(client.receive_loop())
+            ok = await client.wait_for_welcome()
+            if not ok:
+                self._error = f"No response from {self._host}:{self._port}\nCheck server is running and address is correct."
+                return
+            await client.send_hero_select(self._hero_name)
+            self.next_scene = SceneTest(client)
+        except Exception as e:
+            self._error = f"Failed to connect: {e}"
 
     def process_input(self, events):
         for event in events:
             if event.type == pygame.QUIT:
                 self.next_scene = None
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                self.next_scene = None
+                self.next_scene = SceneHeroSelect()
 
     def update(self, dt): pass
 
@@ -429,8 +436,18 @@ class SceneConnecting:
         screen.fill((8, 10, 18))
 
     def render_ui(self, ui_surf):
-        text = self._font.render(f"Connecting to {self._host}:{self._port}...", True, (180, 180, 200))
-        ui_surf.blit(text, text.get_rect(center=(_SCREEN_W // 2, _SCREEN_H // 2)))
+        cx, cy = _SCREEN_W // 2, _SCREEN_H // 2
+        if self._error:
+            lines = self._error.split("\n")
+            for i, line in enumerate(lines):
+                col = (220, 80, 80) if i == 0 else (160, 160, 180)
+                s = self._font.render(line, True, col)
+                ui_surf.blit(s, s.get_rect(center=(cx, cy - 20 + i * 30)))
+            hint = self._font.render("Press ESC to go back", True, (100, 100, 120))
+            ui_surf.blit(hint, hint.get_rect(center=(cx, cy + 60)))
+        else:
+            text = self._font.render(f"Connecting to {self._host}:{self._port}...", True, (180, 180, 200))
+            ui_surf.blit(text, text.get_rect(center=(cx, cy)))
 
 
 #-------------------------------------------------------------------------------------------------------------------Base

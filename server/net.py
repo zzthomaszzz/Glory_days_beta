@@ -31,6 +31,8 @@ class GameServer:
         sock = writer.get_extra_info('socket')
         if sock:
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        peer = writer.get_extra_info('peername', ('?', 0))
+        print(f"[+] TCP connection from {peer[0]}:{peer[1]}")
         player_id = self.next_player_id
         self.next_player_id += 1
         team = 1 if player_id % 2 == 0 else 2
