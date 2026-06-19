@@ -486,3 +486,109 @@ class PlaceTurret(AbilityBase):
         d["place_range"]  = self.place_range
         return d
 
+
+#-------------------------------------------------------------------------------------------------------------------Spin
+class Spin(AbilityBase):
+    cooldown      = 15.0
+    mana_cost     = 80
+    spin_duration = 5.0
+    spin_radius   = 80
+    tick_damage   = 25
+    tick_interval = 0.5
+
+    def __init__(self):
+        super().__init__()
+        self.is_spinning = False
+        self.spin_timer  = 0.0
+        self.tick_timer  = 0.0
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player):
+            return False
+        player.mana         -= self.mana_cost
+        self.is_on_cooldown  = True
+        self.cooldown_timer  = self.cooldown
+        self.is_spinning     = True
+        self.spin_timer      = self.spin_duration
+        self.tick_timer      = 0.0
+        return True
+
+    def tick(self, dt, player, game_state):
+        if not self.is_spinning:
+            return
+        self.spin_timer -= dt
+        self.tick_timer += dt
+        if self.tick_timer >= self.tick_interval:
+            self.tick_timer -= self.tick_interval
+            self._deal_tick(player, game_state)
+        if self.spin_timer <= 0:
+            self.is_spinning = False
+            self.spin_timer  = 0.0
+
+    def _deal_tick(self, player, game_state):
+        from server.projectiles import apply_damage
+        r2 = self.spin_radius ** 2
+        for p in game_state.players.values():
+            if p.is_dead or p.team == player.team:
+                continue
+            dx, dy = p.x - player.x, p.y - player.y
+            if dx * dx + dy * dy <= r2:
+                apply_damage(p, self.tick_damage, p.armor, killer=player)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_spinning"]   = self.is_spinning
+        d["spin_timer"]    = round(self.spin_timer, 2)
+        d["spin_duration"] = self.spin_duration
+        d["slam_radius"]   = self.spin_radius
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------Bushido
+class Bushido(AbilityBase):
+    cooldown    = 0.0
+    mana_cost   = 0
+    crit_chance = 0.25
+    crit_mult   = 1.4
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        return False
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_passive"]  = True
+        d["crit_chance"] = self.crit_chance
+        d["crit_mult"]   = self.crit_mult
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------PlaceBanner
+class PlaceBanner(AbilityBase):
+    cooldown    = 30.0
+    mana_cost   = 100
+    place_range = 60
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player):
+            return False
+        if target_pos is None or game_state is None:
+            return False
+        tx, ty = target_pos
+        dx, dy = tx - player.x, ty - player.y
+        if dx * dx + dy * dy > self.place_range ** 2:
+            return False
+        player.mana         -= self.mana_cost
+        self.is_on_cooldown  = True
+        self.cooldown_timer  = self.cooldown
+        from server.entities import Banner
+        bid = game_state._banner_counter[0]
+        game_state._banner_counter[0] += 1
+        game_state.banners[bid] = Banner(bid, player.id, player.team, tx, ty)
+        return True
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_placement"] = True
+        d["place_range"]  = self.place_range
+        return d
+

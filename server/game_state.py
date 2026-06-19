@@ -21,6 +21,8 @@ class GameState:
         self._proj_counter         = [0]
         self.player_turrets        = {}
         self._turret_counter       = [0]
+        self.banners               = {}
+        self._banner_counter       = [0]
         self.fireball_projectiles  = {}
         self.burning_areas         = {}
         self._ba_counter           = [0]
@@ -202,15 +204,16 @@ class GameState:
                     player.armor_reduction = 0
         apply_movement(self.players, dt)
         update_abilities(self.players, dt, game_state=self)
-        resolve_combat(self.players, self.buildings, self.player_turrets, dt, self.projectiles, self._proj_counter)
+        resolve_combat(self.players, self.buildings, self.player_turrets, self.banners, dt, self.projectiles, self._proj_counter)
         resolve_turret_combat(self.player_turrets, self.players, dt, self.projectiles, self._proj_counter)
-        update_projectiles(self.projectiles, self.players, self.buildings, self.player_turrets, dt)
+        update_projectiles(self.projectiles, self.players, self.buildings, self.player_turrets, self.banners, dt)
         for fp in list(self.fireball_projectiles.values()):
             fp.update(dt, self.burning_areas, self._ba_counter)
         self.fireball_projectiles = {k: v for k, v in self.fireball_projectiles.items() if not v.is_done}
         for ba in self.burning_areas.values():
             ba.update(dt, self.players, self.player_turrets)
         self.burning_areas = {k: v for k, v in self.burning_areas.items() if not v.is_expired}
+        self._update_banners(dt)
         self._handle_respawns(dt)
 
         # Live-only: gold income, capture logic, win condition
@@ -286,6 +289,11 @@ class GameState:
                 if b._mineral_pool > 0:
                     return False
         return True
+
+    def _update_banners(self, dt):
+        for banner in self.banners.values():
+            banner.update(dt, self.players)
+        self.banners = {k: v for k, v in self.banners.items() if not v.is_destroyed}
 
     def _handle_respawns(self, dt):
         no_respawn = self.game_phase == "live" and self._minerals_exhausted()

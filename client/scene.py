@@ -43,6 +43,7 @@ HERO_ASSET_MAP = {
     "Soldier": os.path.join(_ROOT, "asset", "soldier.png"),
     "Mage":    os.path.join(_ROOT, "asset", "mage.png"),
     "Hunter":  os.path.join(_ROOT, "asset", "hunter.png"),
+    "Samurai": os.path.join(_ROOT, "asset", "samurai.png"),
     "Player":  os.path.join(_ROOT, "asset", "default_player.png"),
 }
 
@@ -75,6 +76,16 @@ _HERO_CARDS = [
             ("Q", "Charge",      "Dash to an enemy, stunning them"),
             ("E", "Ground Slam", "AOE slam dealing 50 damage nearby"),
             ("R", "Fortify",     "Gain damage reduction for 5 seconds"),
+        ],
+    },
+    {
+        "name":  "Samurai",
+        "desc":  "Disciplined melee duelist with crit lifesteal and a healing banner.",
+        "stats": {"HP": 480, "Damage": 70, "Range": 60, "Speed": 110, "Armor": 22},
+        "abilities": [
+            ("Q", "Spin",        "Spin for 5s, dealing 25 dmg every 0.5s in a circle"),
+            ("E", "Bushido",     "Passive: 25% crit for 1.4x dmg, heal for damage dealt"),
+            ("R", "Place Banner","Deploy a banner healing allies 2% HP/s for 10s (1 HP)"),
         ],
     },
 ]
@@ -894,6 +905,17 @@ class SceneTest(SceneBase):
                 self._pending_attack = ("turret", tid)
                 return
 
+        for bid, b in snap.get("banners", {}).items():
+            if b.get("is_destroyed") or b.get("team") == self.client.my_team:
+                continue
+            if not self._is_visible(b["x"], b["y"]):
+                continue
+            half = b.get("size", 20) / 2
+            dx, dy = wx - b["x"], wy - b["y"]
+            if abs(dx) <= half and abs(dy) <= half:
+                self._pending_attack = ("banner", bid)
+                return
+
     def update(self, dt):
         super().update(dt)
         self.input_send_timer += dt
@@ -946,6 +968,11 @@ class SceneTest(SceneBase):
             if t.get("team") == my_team and not t.get("is_destroyed"):
                 node = self.map_system.get_node_from_pos(t["x"], t["y"])
                 all_sources.append((node, t.get("vision", 240)))
+
+        for bn in snap.get("banners", {}).values():
+            if bn.get("team") == my_team and not bn.get("is_destroyed"):
+                node = self.map_system.get_node_from_pos(bn["x"], bn["y"])
+                all_sources.append((node, bn.get("vision", 130)))
 
         fog_key = [(id(node), vision) for node, vision in all_sources]
         if fog_key != self._last_fog_key:
@@ -1069,6 +1096,13 @@ class SceneTest(SceneBase):
                 continue
             sx, sy = self._w2s(pos[0], pos[1])
             abilities = p_data.get("abilities", [])
+            spinning = any(ab and ab.get("name") == "Spin" and ab.get("is_spinning") for ab in abilities)
+            if spinning:
+                slam_r = next((ab.get("slam_radius", 80) for ab in abilities if ab and ab.get("name") == "Spin"), 80)
+                pygame.draw.circle(screen, (220, 180, 40), (sx, sy), slam_r, 2)
+                spin_surf = pygame.Surface((slam_r * 2, slam_r * 2), pygame.SRCALPHA)
+                pygame.draw.circle(spin_surf, (220, 180, 40, 30), (slam_r, slam_r), slam_r)
+                screen.blit(spin_surf, (sx - slam_r, sy - slam_r))
             fortified = any(ab and ab.get("name") == "Fortify" and ab.get("is_active") for ab in abilities)
             if fortified:
                 pygame.draw.circle(screen, (80, 160, 220), (sx, sy), 18, 2)
@@ -1167,6 +1201,31 @@ class SceneTest(SceneBase):
             fire_surf.fill((220, 70, 10, 100))
             screen.blit(fire_surf, (bx, by))
             pygame.draw.rect(screen, (255, 120, 30), (bx, by, sz, sz), 1)
+
+        for bn in snap.get("banners", {}).values():
+            if bn.get("is_destroyed"):
+                continue
+            bx, by = bn["x"], bn["y"]
+            if bn.get("team") != my_team and not self._is_visible(bx, by):
+                continue
+            sx, sy = self._w2s(bx, by)
+            team_col = TEAM_COLOURS.get(bn.get("team"), (180, 180, 180))
+            # Friendly banners show heal aura
+            if bn.get("team") == my_team:
+                heal_r = 100
+                aura_surf = pygame.Surface((heal_r * 2, heal_r * 2), pygame.SRCALPHA)
+                pygame.draw.circle(aura_surf, (60, 220, 100, 28), (heal_r, heal_r), heal_r)
+                screen.blit(aura_surf, (sx - heal_r, sy - heal_r))
+                pygame.draw.circle(screen, (60, 220, 100), (sx, sy), heal_r, 1)
+            # Pole
+            pygame.draw.line(screen, (180, 160, 120), (sx, sy + 8), (sx, sy - 16), 2)
+            # Flag
+            flag_col = team_col
+            pygame.draw.polygon(screen, flag_col, [(sx, sy - 16), (sx + 10, sy - 11), (sx, sy - 6)])
+            pygame.draw.polygon(screen, (200, 200, 200), [(sx, sy - 16), (sx + 10, sy - 11), (sx, sy - 6)], 1)
+            # Duration timer
+            dur_s = self._font_label.render(f"{bn.get('duration', 0):.0f}s", True, (200, 230, 200))
+            screen.blit(dur_s, dur_s.get_rect(centerx=sx, bottom=sy + 8))
 
         # Turret placement mode overlay
         if self._placement_mode is not None:
@@ -1389,10 +1448,30 @@ class SceneTest(SceneBase):
             on_cd      = bool(ability and ability.get("is_on_cooldown"))
             in_place   = self._placement_mode == i
             ab_active  = bool(ability and ability.get("is_active"))   # Fortify buff
+            ab_spinning = bool(ability and ability.get("is_spinning"))  # Samurai Spin
+            ab_passive  = bool(ability and ability.get("is_passive"))   # Bushido
 
             pygame.draw.rect(ui_surf, (16, 17, 28), rect)
 
-            if ab_active and not on_cd:
+            if ab_passive:
+                pygame.draw.rect(ui_surf, (85, 70, 35), rect, 1)
+                ns = self._font_slot_sm.render("PASSIVE", True, (160, 140, 80))
+                ui_surf.blit(ns, ns.get_rect(centerx=rect.centerx, centery=rect.centery - 6))
+                crit_s = self._font_slot_sm.render("25% CRIT", True, (220, 185, 60))
+                ui_surf.blit(crit_s, crit_s.get_rect(centerx=rect.centerx, centery=rect.centery + 7))
+
+            elif ab_spinning:
+                pygame.draw.rect(ui_surf, (200, 160, 30), rect, 2)
+                spin_t   = ability.get("spin_timer", 0)
+                spin_max = max(0.001, ability.get("spin_duration", 5.0))
+                bar_w    = int(rect.w * spin_t / spin_max)
+                pygame.draw.rect(ui_surf, (60, 48, 8), (rect.x, rect.y, rect.w, 3))
+                if bar_w > 0:
+                    pygame.draw.rect(ui_surf, (255, 200, 40), (rect.x, rect.y, bar_w, 3))
+                name_s = self._font_slot_sm.render("SPIN", True, (255, 210, 60))
+                ui_surf.blit(name_s, name_s.get_rect(centerx=rect.centerx, centery=rect.centery))
+
+            elif ab_active and not on_cd:
                 # Draw active buff glow border + duration drain bar at top
                 pygame.draw.rect(ui_surf, (60, 140, 210), rect, 2)
                 dur_t   = ability.get("duration_timer", 0)
@@ -1531,6 +1610,15 @@ class SceneTest(SceneBase):
             tx   = mini_x + int(t["x"] * _MINI_SX)
             ty_m = mini_y + int(t["y"] * _MINI_SY)
             pygame.draw.rect(ui_surf, col, (tx - 2, ty_m - 2, 4, 4))
+
+        for bn in snap.get("banners", {}).values():
+            if bn.get("is_destroyed"):
+                continue
+            if bn.get("team") != my_team and not self._is_visible(bn["x"], bn["y"]):
+                continue
+            bx_m = mini_x + int(bn["x"] * _MINI_SX)
+            by_m = mini_y + int(bn["y"] * _MINI_SY)
+            pygame.draw.circle(ui_surf, (60, 220, 100), (bx_m, by_m), 3)
 
         rune_mini = snap.get("rune", {})
         if rune_mini.get("state") not in ("inactive", "cooldown"):

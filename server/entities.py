@@ -1,4 +1,9 @@
-from server.abilities import *
+from server.abilities import (
+    Snipe, PlaceTurret, Dash,
+    Fireball, Mend, Teleport,
+    Charge, GroundSlam, Fortify,
+    Spin, Bushido, PlaceBanner,
+)
 
 
 class EntityBase:
@@ -156,11 +161,26 @@ class Hunter(Player):
     default_abilities  = [Charge, GroundSlam, Fortify]
 
 
+#-------------------------------------------------------------------------------------------------------------------Samurai
+class Samurai(Player):
+    BASE_HP            = 480
+    BASE_ATTACK_DAMAGE = 70
+    BASE_ATTACK_RANGE  = 60
+    BASE_ATTACK_SPEED  = 0.9
+    BASE_ARMOR         = 22
+    BASE_SPEED         = 110
+    is_ranged          = False
+    proj_speed         = 0
+
+    default_abilities  = [Spin, Bushido, PlaceBanner]
+
+
 #-------------------------------------------------------------------------------------------------------------------Registry
 HERO_REGISTRY = {
     "Soldier": Soldier,
     "Mage":    Mage,
     "Hunter":  Hunter,
+    "Samurai": Samurai,
 }
 
 
@@ -257,5 +277,60 @@ class PlayerTurret:
             "attack_range": self.attack_range,
             "vision":       self.vision,
             "size":         self.size,
+            "is_destroyed": self.is_destroyed,
+        }
+
+
+#-------------------------------------------------------------------------------------------------------------------Banner
+class Banner:
+    HP           = 1
+    ARMOR        = 0
+    VISION       = 130
+    SIZE         = 20
+    DURATION     = 10.0
+    HEAL_RADIUS  = 100
+    HEAL_PCT_SEC = 0.02
+
+    def __init__(self, banner_id, owner_id, team, x, y):
+        self.id           = banner_id
+        self.owner_id     = owner_id
+        self.team         = team
+        self.x            = x
+        self.y            = y
+        self.hp           = self.HP
+        self.max_hp       = self.HP
+        self.armor        = self.ARMOR
+        self.vision       = self.VISION
+        self.size         = self.SIZE
+        self.duration     = self.DURATION
+        self.is_destroyed = False
+
+    def update(self, dt, players):
+        if self.is_destroyed:
+            return
+        self.duration -= dt
+        if self.duration <= 0:
+            self.is_destroyed = True
+            return
+        r2 = self.HEAL_RADIUS ** 2
+        for p in players.values():
+            if p.is_dead or p.team != self.team:
+                continue
+            dx, dy = p.x - self.x, p.y - self.y
+            if dx * dx + dy * dy <= r2:
+                p.hp = min(p.max_hp, p.hp + p.max_hp * self.HEAL_PCT_SEC * dt)
+
+    def to_dict(self):
+        return {
+            "id":           self.id,
+            "owner_id":     self.owner_id,
+            "team":         self.team,
+            "x":            self.x,
+            "y":            self.y,
+            "hp":           self.hp,
+            "max_hp":       self.max_hp,
+            "size":         self.size,
+            "vision":       self.vision,
+            "duration":     round(self.duration, 1),
             "is_destroyed": self.is_destroyed,
         }

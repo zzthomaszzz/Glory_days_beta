@@ -82,6 +82,7 @@ class GameServer:
                 player_turrets=self.game_state.player_turrets,
                 fireball_projectiles=self.game_state.fireball_projectiles,
                 burning_areas=self.game_state.burning_areas,
+                banners=self.game_state.banners,
                 shops=self.game_state.shops,
                 events=[],
                 game_phase=self.game_state.game_phase,

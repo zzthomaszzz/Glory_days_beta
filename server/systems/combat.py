@@ -2,7 +2,7 @@ from shared.constants import ATTACK_WINDUP
 from server.projectiles import Projectile, apply_damage, apply_on_hit_effects
 
 
-def resolve_combat(players, buildings, player_turrets, dt, projectiles, proj_counter):
+def resolve_combat(players, buildings, player_turrets, banners, dt, projectiles, proj_counter):
     for player in players.values():
         if player.is_dead:
             continue
@@ -16,7 +16,7 @@ def resolve_combat(players, buildings, player_turrets, dt, projectiles, proj_cou
             continue
 
         target_type, target_id = player.attack_target
-        target = _get_target(target_type, target_id, players, buildings, player_turrets)
+        target = _get_target(target_type, target_id, players, buildings, player_turrets, banners)
 
         if not target or _is_gone(target):
             player.attack_target = None
@@ -74,9 +74,9 @@ def resolve_turret_combat(player_turrets, players, dt, projectiles, proj_counter
         )
 
 
-def update_projectiles(projectiles, players, buildings, player_turrets, dt):
+def update_projectiles(projectiles, players, buildings, player_turrets, banners, dt):
     for proj in list(projectiles.values()):
-        proj.update(dt, players, buildings, player_turrets)
+        proj.update(dt, players, buildings, player_turrets, banners)
     for k in [k for k, p in projectiles.items() if p.is_done]:
         del projectiles[k]
 
@@ -96,11 +96,12 @@ def _find_turret_target(turret, players):
     return best
 
 
-def _get_target(target_type, target_id, players, buildings, player_turrets):
+def _get_target(target_type, target_id, players, buildings, player_turrets, banners):
     match target_type:
         case "player":   return players.get(int(target_id))
         case "building": return buildings.get(int(target_id))
         case "turret":   return player_turrets.get(int(target_id))
+        case "banner":   return banners.get(int(target_id))
     return None
 
 

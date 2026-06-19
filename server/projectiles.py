@@ -1,4 +1,5 @@
 import math
+import random
 
 from shared.constants import RESPAWN_TIME, KILL_GOLD
 
@@ -17,8 +18,8 @@ class Projectile:
         self.speed       = speed
         self.is_done     = False
 
-    def update(self, dt, players, buildings, player_turrets=None):
-        target = _resolve_target(self.target_type, self.target_id, players, buildings, player_turrets or {})
+    def update(self, dt, players, buildings, player_turrets=None, banners=None):
+        target = _resolve_target(self.target_type, self.target_id, players, buildings, player_turrets or {}, banners or {})
         if not target or getattr(target, "is_dead", False) or getattr(target, "is_destroyed", False):
             self.is_done = True
             return
@@ -29,11 +30,10 @@ class Projectile:
         step   = self.speed * dt
 
         if dist <= step:
-            killer = players.get(self.owner_id) if self.target_type == "player" else None
+            killer = players.get(self.owner_id)
             apply_damage(target, self.damage, self.armor, killer=killer)
-            owner = players.get(self.owner_id)
-            if owner:
-                apply_on_hit_effects(owner, target)
+            if killer:
+                apply_on_hit_effects(killer, target)
             self.is_done = True
         else:
             self.x += (dx / dist) * step
@@ -84,11 +84,12 @@ class FireballProjectile:
         }
 
 
-def _resolve_target(target_type, target_id, players, buildings, player_turrets):
+def _resolve_target(target_type, target_id, players, buildings, player_turrets, banners):
     match target_type:
         case "player":   return players.get(target_id)
         case "building": return buildings.get(target_id)
         case "turret":   return player_turrets.get(target_id)
+        case "banner":   return banners.get(target_id)
     return None
 
 
@@ -102,8 +103,22 @@ def apply_on_hit_effects(attacker, target):
 
 def apply_damage(target, raw_damage, armor, killer=None):
     effective_armor = max(0, armor - getattr(target, 'armor_reduction', 0))
+    is_crit = False
+
+    if killer is not None:
+        for ab in getattr(killer, 'abilities', []):
+            if ab is not None and hasattr(ab, 'crit_chance'):
+                if random.random() < ab.crit_chance:
+                    raw_damage = int(raw_damage * ab.crit_mult)
+                    is_crit = True
+                break
+
     damage = max(1, raw_damage - effective_armor)
     target.hp -= damage
+
+    if is_crit and killer is not None:
+        killer.hp = min(killer.max_hp, killer.hp + damage)
+
     if target.hp <= 0:
         target.hp = 0
         if hasattr(target, "is_destroyed"):
