@@ -91,6 +91,8 @@ class GameServer:
                 wait_elapsed=self.game_state.wait_timer,
                 minerals_exhausted=self.game_state._minerals_exhausted(),
                 rune=self.game_state.rune,
+                traps=self.game_state.traps,
+                bolt_projectiles=self.game_state.bolt_projectiles,
             )
             data = (json.dumps(snapshot) + "\n").encode()
 

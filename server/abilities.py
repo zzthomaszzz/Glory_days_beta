@@ -255,6 +255,14 @@ class GroundSlam(AbilityBase):
     slam_damage   = 50
     slow_factor   = 0.7
     slow_duration = 2.0
+    ring_speed    = 350.0
+
+    def __init__(self):
+        super().__init__()
+        self._ring_active = False
+        self._ring_radius = 0.0
+        self._ring_x      = 0.0
+        self._ring_y      = 0.0
 
     def use(self, player, targets=None, target_pos=None, game_state=None):
         if not self.can_use(player) or game_state is None:
@@ -263,6 +271,10 @@ class GroundSlam(AbilityBase):
         player.mana         -= self.mana_cost
         self.is_on_cooldown  = True
         self.cooldown_timer  = self.cooldown
+        self._ring_active    = True
+        self._ring_radius    = 0.0
+        self._ring_x         = player.x
+        self._ring_y         = player.y
         r2 = self.slam_radius ** 2
         for p in game_state.players.values():
             if p.is_dead or p.team == player.team:
@@ -274,9 +286,20 @@ class GroundSlam(AbilityBase):
                 p.slow_factor = self.slow_factor
         return True
 
+    def tick(self, dt, player, game_state):
+        if not self._ring_active:
+            return
+        self._ring_radius += self.ring_speed * dt
+        if self._ring_radius >= self.slam_radius:
+            self._ring_active = False
+
     def to_dict(self):
         d = super().to_dict()
-        d["slam_radius"] = self.slam_radius
+        d["slam_radius"]   = self.slam_radius
+        d["ring_active"]   = self._ring_active
+        d["ring_radius"]   = round(self._ring_radius, 1)
+        d["ring_x"]        = round(self._ring_x, 1)
+        d["ring_y"]        = round(self._ring_y, 1)
         return d
 
 
@@ -386,10 +409,13 @@ class Dash(AbilityBase):
 
 #-------------------------------------------------------------------------------------------------------------------Teleport
 class Teleport(AbilityBase):
-    cooldown     = 18.0
-    mana_cost    = 80
-    channel_time = 1.5
-    cast_range   = 450
+    cooldown        = 18.0
+    mana_cost       = 80
+    channel_time    = 1.5
+    cast_range      = 300
+    pulse_damage    = 80
+    pulse_max_range = 150
+    pulse_speed     = 150.0
 
     def __init__(self):
         super().__init__()
@@ -397,6 +423,11 @@ class Teleport(AbilityBase):
         self.channel_timer  = 0.0
         self.target_pos     = None
         self._hp_snapshot   = 0.0
+        self._pulse_active  = False
+        self._pulse_radius  = 0.0
+        self._pulse_x       = 0.0
+        self._pulse_y       = 0.0
+        self._pulse_hit_ids = set()
 
     def use(self, player, targets=None, target_pos=None, game_state=None):
         if not self.can_use(player):
@@ -417,27 +448,53 @@ class Teleport(AbilityBase):
         return True
 
     def tick(self, dt, player, game_state):
-        if not self.is_channeling:
-            return
-        if player.hp < self._hp_snapshot:
-            # damaged — cancel channel, keep cooldown
-            self.is_channeling = False
-            self.target_pos    = None
-            return
-        self.channel_timer -= dt
-        if self.channel_timer <= 0:
-            self.is_channeling = False
-            if self.target_pos:
-                player.x, player.y = self.target_pos
-            self.target_pos = None
+        if self.is_channeling:
+            if player.hp < self._hp_snapshot:
+                self.is_channeling = False
+                self.target_pos    = None
+                return
+            self.channel_timer -= dt
+            if self.channel_timer <= 0:
+                self.is_channeling  = False
+                if self.target_pos:
+                    player.x, player.y = self.target_pos
+                    self._pulse_active  = True
+                    self._pulse_radius  = 0.0
+                    self._pulse_x       = player.x
+                    self._pulse_y       = player.y
+                    self._pulse_hit_ids = set()
+                self.target_pos = None
+
+        if self._pulse_active and game_state is not None:
+            from server.projectiles import apply_damage
+            old_r              = self._pulse_radius
+            self._pulse_radius = min(self.pulse_max_range,
+                                     self._pulse_radius + self.pulse_speed * dt)
+            new_r              = self._pulse_radius
+            for p in game_state.players.values():
+                if p.is_dead or p.team == player.team or p.id in self._pulse_hit_ids:
+                    continue
+                dx = p.x - self._pulse_x
+                dy = p.y - self._pulse_y
+                dist = math.sqrt(dx * dx + dy * dy)
+                if old_r <= dist <= new_r:
+                    apply_damage(p, self.pulse_damage, p.magic_resist, killer=player)
+                    self._pulse_hit_ids.add(p.id)
+            if self._pulse_radius >= self.pulse_max_range:
+                self._pulse_active = False
+                self._pulse_hit_ids.clear()
 
     def to_dict(self):
         d = super().to_dict()
-        d["is_placement"]  = True
-        d["place_range"]   = self.cast_range
-        d["is_channeling"] = self.is_channeling
-        d["channel_timer"] = round(self.channel_timer, 2)
-        d["channel_time"]  = self.channel_time
+        d["is_placement"]   = True
+        d["place_range"]    = self.cast_range
+        d["is_channeling"]  = self.is_channeling
+        d["channel_timer"]  = round(self.channel_timer, 2)
+        d["channel_time"]   = self.channel_time
+        d["pulse_active"]   = self._pulse_active
+        d["pulse_radius"]   = round(self._pulse_radius, 1)
+        d["pulse_x"]        = round(self._pulse_x, 1)
+        d["pulse_y"]        = round(self._pulse_y, 1)
         return d
 
 
@@ -559,6 +616,181 @@ class Bushido(AbilityBase):
         d["is_passive"]  = True
         d["crit_chance"] = self.crit_chance
         d["crit_mult"]   = self.crit_mult
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------Stealth
+class Stealth(AbilityBase):
+    cooldown    = 20.0
+    mana_cost   = 60
+    duration    = 12.0
+    bonus_mult  = 1.5
+
+    def __init__(self):
+        super().__init__()
+        self.is_active      = False
+        self.duration_timer = 0.0
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player):
+            return False
+        player.mana              -= self.mana_cost
+        self.is_on_cooldown       = True
+        self.cooldown_timer       = self.cooldown
+        self.is_active            = True
+        self.duration_timer       = self.duration
+        player.is_invisible       = True
+        player._stealth_bonus_ready = True
+        return True
+
+    def tick(self, dt, player, game_state):
+        if not self.is_active:
+            return
+        self.duration_timer -= dt
+        if self.duration_timer <= 0:
+            self.is_active      = False
+            self.duration_timer = 0.0
+            player.is_invisible = False
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_active"]      = self.is_active
+        d["duration_timer"] = round(self.duration_timer, 2)
+        d["duration"]       = self.duration
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------PlaceTrap
+class PlaceTrap(AbilityBase):
+    cooldown    = 18.0
+    mana_cost   = 50
+    max_traps   = 3
+    place_range = 200
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player):
+            return False
+        if target_pos is None or game_state is None:
+            return False
+        tx, ty = target_pos
+        dx, dy = tx - player.x, ty - player.y
+        if dx * dx + dy * dy > self.place_range ** 2:
+            return False
+        count = sum(1 for t in game_state.traps.values()
+                    if t.owner_id == player.id and not t.is_expired)
+        if count >= self.max_traps:
+            return False
+        player.mana        -= self.mana_cost
+        self.is_on_cooldown = True
+        self.cooldown_timer = self.cooldown
+        from server.entities import Trap
+        tid = game_state._trap_counter[0]
+        game_state._trap_counter[0] += 1
+        game_state.traps[tid] = Trap(tid, player.id, player.team, tx, ty)
+        return True
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_placement"] = True
+        d["place_range"]  = self.place_range
+        d["aoe_size"]     = 32
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------Bolt
+class Bolt(AbilityBase):
+    cooldown   = 12.0
+    mana_cost  = 70
+    damage     = 280
+    speed      = 175.0
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player):
+            return False
+        if target_pos is None or game_state is None:
+            return False
+        tx, ty = target_pos
+        dx, dy = tx - player.x, ty - player.y
+        if math.sqrt(dx * dx + dy * dy) < 1:
+            return False
+        player.mana        -= self.mana_cost
+        self.is_on_cooldown = True
+        self.cooldown_timer = self.cooldown
+        from server.projectiles import BoltProjectile
+        bid = game_state._proj_counter[0]
+        game_state._proj_counter[0] += 1
+        game_state.bolt_projectiles[bid] = BoltProjectile(
+            proj_id=bid, owner_id=player.id, owner_team=player.team,
+            x=player.x, y=player.y, dx=dx, dy=dy,
+            damage=self.damage, speed=self.speed,
+        )
+        return True
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_placement"] = True
+        d["place_range"]  = 9999
+        return d
+
+
+#-------------------------------------------------------------------------------------------------------------------Recall
+class Recall(AbilityBase):
+    cooldown     = 8.0
+    mana_cost    = 0
+    channel_time = 4.0
+
+    def __init__(self):
+        super().__init__()
+        self.is_channeling = False
+        self.channel_timer = 0.0
+        self._hp_snapshot  = 0.0
+
+    def use(self, player, targets=None, target_pos=None, game_state=None):
+        if not self.can_use(player):
+            return False
+        if self.is_channeling:
+            self._cancel()
+            return True
+        self.is_channeling = True
+        self.channel_timer = self.channel_time
+        self._hp_snapshot  = player.hp
+        return True
+
+    def tick(self, dt, player, game_state):
+        if not self.is_channeling:
+            return
+        # Interrupted by damage, CC, or intentional movement
+        if player.hp < self._hp_snapshot:
+            self._cancel()
+            return
+        if player.stun_timer > 0 or player.slow_timer > 0:
+            self._cancel()
+            return
+        if player.dx != 0 or player.dy != 0:
+            self._cancel()
+            return
+        self.channel_timer -= dt
+        if self.channel_timer <= 0:
+            self._complete(player, game_state)
+
+    def _cancel(self):
+        self.is_channeling = False
+        self.channel_timer = 0.0
+
+    def _complete(self, player, game_state):
+        from server.game_state import SPAWN_POSITIONS
+        self.is_channeling  = False
+        self.is_on_cooldown = True
+        self.cooldown_timer = self.cooldown
+        player.x, player.y  = SPAWN_POSITIONS.get(player.team, (60.0, 60.0))
+        player.attack_target = None
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["is_channeling"]  = self.is_channeling
+        d["channel_timer"]  = round(self.channel_timer, 2)
+        d["channel_time"]   = self.channel_time
+        d["is_recall"]      = True
         return d
 
 

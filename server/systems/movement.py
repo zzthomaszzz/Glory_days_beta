@@ -10,7 +10,7 @@ def apply_movement(players, dt):
     for player in players.values():
         if player.is_dead or player.is_attacking:
             continue
-        if player.stun_timer > 0:
+        if player.stun_timer > 0 or player.root_timer > 0:
             continue
         if any(getattr(ab, "is_channeling", False) for ab in player.abilities if ab):
             continue

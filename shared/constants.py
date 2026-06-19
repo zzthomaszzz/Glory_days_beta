@@ -14,8 +14,8 @@ MAP_W = 1280
 MAP_H = 800
 
 #Economy
-MINERAL_START         = 240    # HQ pool — 120 ticks × 5s = 10-minute lifespan
-CAPTURE_MINERAL_START = 100    # capture point pool — 50 ticks × 5s ≈ 4 minutes
+MINERAL_START         = 200    # HQ pool — 120 ticks × 5s = 10-minute lifespan
+CAPTURE_MINERAL_START = 50    # capture point pool — 50 ticks × 5s ≈ 4 minutes
 GOLD_PER_MINERAL      = 1
 MINERALS_PER_TICK     = 2
 GOLD_TICK_INTERVAL    = 5.0

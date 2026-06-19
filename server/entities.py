@@ -3,6 +3,8 @@ from server.abilities import (
     Fireball, Mend, Teleport,
     Charge, GroundSlam, Fortify,
     Spin, Bushido, PlaceBanner,
+    Stealth, PlaceTrap, Bolt,
+    Recall,
 )
 
 
@@ -31,7 +33,7 @@ class Player(EntityBase):
     is_ranged  = False
     proj_speed = 0
 
-    default_abilities = [None, None, None]
+    default_abilities = [None, None, None, None]
 
     def __init__(self, player_id, team):
         super().__init__(32, 0, 0, self.BASE_VISION)
@@ -83,8 +85,15 @@ class Player(EntityBase):
         self.stun_timer  = 0.0
         self.slow_timer  = 0.0
         self.slow_factor = 1.0
+        self.root_timer  = 0.0
         self.armor_reduction       = 0
         self.armor_reduction_timer = 0.0
+        self.bleed_timer  = 0.0
+        self.bleed_dps    = 0.0
+        self.revealed_timer       = 0.0
+        self.is_invisible         = False
+        self._stealth_bonus_ready = False
+        self.bush_idx             = -1
 
     def to_dict(self):
         return {
@@ -106,8 +115,13 @@ class Player(EntityBase):
             "vision": self.vision,
             "is_dead": self.is_dead,
             "respawn_timer": round(self.respawn_timer, 2),
-            "stun_timer":  round(self.stun_timer,  2),
-            "slow_timer":  round(self.slow_timer,  2),
+            "stun_timer":     round(self.stun_timer,     2),
+            "slow_timer":     round(self.slow_timer,     2),
+            "root_timer":     round(self.root_timer,     2),
+            "bleed_timer":    round(self.bleed_timer,    2),
+            "revealed_timer": round(self.revealed_timer, 2),
+            "is_invisible":   self.is_invisible,
+            "bush_idx":       self.bush_idx,
             "abilities": [a.to_dict() if a else None for a in self.abilities],
             "inventory": self.inventory[:],
         }
@@ -124,7 +138,7 @@ class Soldier(Player):
     is_ranged          = True
     proj_speed         = 400
 
-    default_abilities  = [Snipe, PlaceTurret, Dash]
+    default_abilities  = [Snipe, PlaceTurret, Dash, Recall]
 
 
 #-------------------------------------------------------------------------------------------------------------------Mage
@@ -142,7 +156,7 @@ class Mage(Player):
     is_ranged          = True
     proj_speed         = 250
 
-    default_abilities  = [Fireball, Mend, Teleport]
+    default_abilities  = [Fireball, Mend, Teleport, Recall]
 
 
 #-------------------------------------------------------------------------------------------------------------------Hunter
@@ -158,7 +172,7 @@ class Hunter(Player):
     is_ranged          = False
     proj_speed         = 0
 
-    default_abilities  = [Charge, GroundSlam, Fortify]
+    default_abilities  = [Charge, GroundSlam, Fortify, Recall]
 
 
 #-------------------------------------------------------------------------------------------------------------------Samurai
@@ -172,7 +186,25 @@ class Samurai(Player):
     is_ranged          = False
     proj_speed         = 0
 
-    default_abilities  = [Spin, Bushido, PlaceBanner]
+    default_abilities  = [Spin, Bushido, PlaceBanner, Recall]
+
+
+#-------------------------------------------------------------------------------------------------------------------Rat
+class Rat(Player):
+    BASE_HP            = 360
+    BASE_MANA          = 260
+    BASE_ATTACK_DAMAGE = 50
+    BASE_ABILITY_POWER = 25
+    BASE_ATTACK_RANGE  = 130
+    BASE_ATTACK_SPEED  = 0.75
+    BASE_ARMOR         = 12
+    BASE_MAGIC_RESIST  = 20
+    BASE_SPEED         = 130
+    BASE_VISION        = 170
+    is_ranged          = True
+    proj_speed         = 300
+
+    default_abilities  = [Stealth, PlaceTrap, Bolt, Recall]
 
 
 #-------------------------------------------------------------------------------------------------------------------Registry
@@ -181,7 +213,57 @@ HERO_REGISTRY = {
     "Mage":    Mage,
     "Hunter":  Hunter,
     "Samurai": Samurai,
+    "Rat":     Rat,
 }
+
+
+#-------------------------------------------------------------------------------------------------------------------Trap
+class Trap:
+    ROOT_DUR   = 2.0
+    BLEED_DPS  = 30
+    BLEED_DUR  = 2.0
+    SIGHT_DUR  = 3.0
+    TRIGGER_R  = 20
+    SIZE       = 16
+
+    def __init__(self, trap_id, owner_id, team, x, y):
+        self.id         = trap_id
+        self.owner_id   = owner_id
+        self.team       = team
+        self.x          = x
+        self.y          = y
+        self.size       = self.SIZE
+        self.is_expired = False
+
+    def update(self, dt, players):
+        if self.is_expired:
+            return
+        r2 = self.TRIGGER_R ** 2
+        for p in players.values():
+            if p.is_dead or p.team == self.team:
+                continue
+            dx = p.x - self.x
+            dy = p.y - self.y
+            if dx * dx + dy * dy <= r2:
+                self._trigger(p)
+                return
+
+    def _trigger(self, player):
+        player.root_timer     = self.ROOT_DUR
+        player.bleed_timer    = self.BLEED_DUR
+        player.bleed_dps      = self.BLEED_DPS
+        player.revealed_timer = self.SIGHT_DUR
+        self.is_expired       = True
+
+    def to_dict(self):
+        return {
+            "id":       self.id,
+            "owner_id": self.owner_id,
+            "team":     self.team,
+            "x":        self.x,
+            "y":        self.y,
+            "size":     self.SIZE,
+        }
 
 
 #-------------------------------------------------------------------------------------------------------------------BurningArea

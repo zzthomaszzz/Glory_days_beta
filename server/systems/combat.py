@@ -6,50 +6,8 @@ def resolve_combat(players, buildings, player_turrets, banners, dt, projectiles,
     for player in players.values():
         if player.is_dead:
             continue
-
-        if player.is_attacking:
-            player.attack_windup_timer -= dt
-            if player.attack_windup_timer <= 0:
-                player.is_attacking = False
-
-        if not player.attack_target:
-            continue
-
-        target_type, target_id = player.attack_target
-        target = _get_target(target_type, target_id, players, buildings, player_turrets, banners)
-
-        if not target or _is_gone(target):
-            player.attack_target = None
-            continue
-
-        target_team = getattr(target, "team", None)
-        if target_team == 0 or target_team == player.team:
-            player.attack_target = None
-            continue
-
-        if not _in_range(player, target):
-            continue
-
-        player.attack_timer -= dt
-        if player.attack_timer <= 0:
-            player.attack_timer        = 1.0 / player.attack_speed
-            player.is_attacking        = True
-            player.attack_windup_timer = ATTACK_WINDUP
-            player.attack_target       = None
-
-            if player.is_ranged:
-                pid = proj_counter[0]
-                proj_counter[0] += 1
-                projectiles[pid] = Projectile(
-                    pid, player.id, player.team,
-                    player.x, player.y,
-                    target_type, int(target_id),
-                    player.attack_damage, target.armor,
-                    player.proj_speed,
-                )
-            else:
-                apply_damage(target, player.attack_damage, target.armor, killer=player)
-                apply_on_hit_effects(player, target)
+        _tick_windup(player, dt)
+        _tick_attack(player, players, buildings, player_turrets, banners, dt, projectiles, proj_counter)
 
 
 def resolve_turret_combat(player_turrets, players, dt, projectiles, proj_counter):
@@ -74,14 +32,105 @@ def resolve_turret_combat(player_turrets, players, dt, projectiles, proj_counter
         )
 
 
-def update_projectiles(projectiles, players, buildings, player_turrets, banners, dt):
-    for proj in list(projectiles.values()):
-        proj.update(dt, players, buildings, player_turrets, banners)
-    for k in [k for k, p in projectiles.items() if p.is_done]:
-        del projectiles[k]
+# ---------------------------------------------------------------------------
+# Player attack helpers
+# ---------------------------------------------------------------------------
 
+def _tick_windup(player, dt):
+    """Count down the visual attack-swing state set when an attack fires."""
+    if player.is_attacking:
+        player.attack_windup_timer -= dt
+        if player.attack_windup_timer <= 0:
+            player.is_attacking = False
+
+
+def _tick_attack(player, players, buildings, player_turrets, banners, dt, projectiles, proj_counter):
+    """
+    Progress a player's auto-attack cycle.
+
+    Target persists across ticks so attacks repeat until the target dies/is
+    destroyed, moves out of range, or the player picks a new target.  The timer
+    only counts down while the target is alive and in range — identical to
+    standard MOBA behaviour.
+    """
+    if not player.attack_target:
+        return
+
+    target_type, target_id = player.attack_target
+    target = _get_target(target_type, target_id, players, buildings, player_turrets, banners)
+
+    # Target gone — stop attacking
+    if not target or _is_gone(target):
+        player.attack_target = None
+        return
+
+    # Target is neutral (team 0) or friendly — deselect
+    target_team = getattr(target, "team", None)
+    if target_team == 0 or target_team == player.team:
+        player.attack_target = None
+        return
+
+    # Invisible and not revealed — players cannot see stealthed enemies
+    if getattr(target, "is_invisible", False) and not getattr(target, "revealed_timer", 0) > 0:
+        player.attack_target = None
+        return
+
+    # Out of range — hold target but don't tick the timer
+    if not _in_range(player, target):
+        return
+
+    # Count down between attacks
+    player.attack_timer -= dt
+    if player.attack_timer > 0:
+        return
+
+    # Fire — reset timer but keep target so the next swing happens automatically
+    player.attack_timer = 1.0 / player.attack_speed
+    player.is_attacking = True
+    player.attack_windup_timer = ATTACK_WINDUP
+
+    damage = player.attack_damage
+    if getattr(player, '_stealth_bonus_ready', False):
+        damage = int(damage * 1.5)
+        player._stealth_bonus_ready = False
+    _break_stealth(player)
+
+    if player.is_ranged:
+        _fire_projectile(player, target_type, int(target_id), target.armor, projectiles, proj_counter, damage)
+    else:
+        apply_damage(target, damage, target.armor, killer=player)
+        apply_on_hit_effects(player, target)
+
+
+def _fire_projectile(player, target_type, target_id, target_armor, projectiles, proj_counter, damage=None):
+    pid = proj_counter[0]
+    proj_counter[0] += 1
+    projectiles[pid] = Projectile(
+        pid, player.id, player.team,
+        player.x, player.y,
+        target_type, target_id,
+        damage if damage is not None else player.attack_damage,
+        target_armor,
+        player.proj_speed,
+    )
+
+
+def _break_stealth(player):
+    if not player.is_invisible:
+        return
+    player.is_invisible = False
+    for ab in player.abilities:
+        if ab and getattr(ab, 'is_active', False) and ab.__class__.__name__ == 'Stealth':
+            ab.is_active      = False
+            ab.duration_timer = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Turret helpers
+# ---------------------------------------------------------------------------
 
 def _find_turret_target(turret, players):
+    # Turrets have true sight — they can detect invisible (stealthed) enemies
     best    = None
     best_d2 = turret.attack_range ** 2
     for p in players.values():
@@ -95,6 +144,10 @@ def _find_turret_target(turret, players):
             best    = p
     return best
 
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 def _get_target(target_type, target_id, players, buildings, player_turrets, banners):
     match target_type:

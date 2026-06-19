@@ -84,6 +84,52 @@ class FireballProjectile:
         }
 
 
+class BoltProjectile:
+    def __init__(self, proj_id, owner_id, owner_team, x, y, dx, dy, damage, speed):
+        dist         = math.sqrt(dx * dx + dy * dy)
+        self.proj_id     = proj_id
+        self.owner_id    = owner_id
+        self.owner_team  = owner_team
+        self.x           = float(x)
+        self.y           = float(y)
+        self.vx          = (dx / dist) * speed
+        self.vy          = (dy / dist) * speed
+        self.damage      = damage
+        self.angle       = math.degrees(math.atan2(-dy, dx))
+        self.is_done     = False
+
+    def update(self, dt, players):
+        if self.is_done:
+            return
+        import pygame
+        from shared.map_data import OBSTACLES
+        nx = self.x + self.vx * dt
+        ny = self.y + self.vy * dt
+        hit_box = pygame.Rect(int(nx - 4), int(ny - 4), 8, 8)
+        if any(obs.colliderect(hit_box) for obs in OBSTACLES):
+            self.is_done = True
+            return
+        self.x, self.y = nx, ny
+        for p in players.values():
+            if p.is_dead or p.team == self.owner_team:
+                continue
+            ddx = p.x - self.x
+            ddy = p.y - self.y
+            if ddx * ddx + ddy * ddy <= (p.size + 5) ** 2:
+                apply_damage(p, self.damage, p.armor)
+                self.is_done = True
+                return
+
+    def to_dict(self):
+        return {
+            "x":          round(self.x, 1),
+            "y":          round(self.y, 1),
+            "owner_team": self.owner_team,
+            "angle":      round(self.angle, 1),
+            "is_bolt":    True,
+        }
+
+
 def _resolve_target(target_type, target_id, players, buildings, player_turrets, banners):
     match target_type:
         case "player":   return players.get(target_id)
