@@ -36,26 +36,25 @@ class GameServer:
         player_id = self.next_player_id
         self.next_player_id += 1
         team = 1 if player_id % 2 == 0 else 2
+
+        try:
+            hero_line = await asyncio.wait_for(reader.readline(), timeout=15.0)
+            if not hero_line:
+                writer.close()
+                return
+            hero_msg = json.loads(hero_line.decode())
+            hero_name = hero_msg.get("hero", "Player") if hero_msg.get("type") == "hero_select" else "Player"
+        except Exception as e:
+            print(f"[!] Player {player_id} handshake failed: {e}")
+            writer.close()
+            return
+
+        self.game_state.add_player(player_id, team, hero_name)
         self.writers[player_id] = writer
 
         welcome = {"type": "welcome", "player_id": player_id, "team": team}
         writer.write((json.dumps(welcome) + "\n").encode())
         await writer.drain()
-
-        try:
-            hero_line = await reader.readline()
-            if not hero_line:
-                self.writers.pop(player_id, None)
-                writer.close()
-                return
-            hero_msg = json.loads(hero_line.decode())
-            hero_name = hero_msg.get("hero", "Player") if hero_msg.get("type") == "hero_select" else "Player"
-        except Exception:
-            self.writers.pop(player_id, None)
-            writer.close()
-            return
-
-        self.game_state.add_player(player_id, team, hero_name)
         print(f"Player {player_id} connected as {hero_name} (team {team})")
 
         try:

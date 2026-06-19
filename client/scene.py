@@ -413,12 +413,12 @@ class SceneConnecting:
         try:
             client = NetworkClient(self._host, self._port, SNAPSHOT_INTERVAL)
             await client.connect()
+            await client.send_hero_select(self._hero_name)
             asyncio.create_task(client.receive_loop())
             ok = await client.wait_for_welcome()
             if not ok:
                 self._error = f"No response from {self._host}:{self._port}\nCheck server is running and address is correct."
                 return
-            await client.send_hero_select(self._hero_name)
             self.next_scene = SceneTest(client)
         except Exception as e:
             self._error = f"Failed to connect: {e}"
