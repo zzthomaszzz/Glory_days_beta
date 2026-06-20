@@ -52,4 +52,4 @@ CAPTURE_HP     = 300   # HP before the point resets to neutral
 OFFICIAL_SERVER_HOST = "209.25.142.17"
 OFFICIAL_SERVER_PORT = 1087
 
-GAME_VERSION = "1.6"
+GAME_VERSION = "1.7"
