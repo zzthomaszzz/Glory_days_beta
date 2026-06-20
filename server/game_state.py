@@ -19,7 +19,8 @@ SPAWN_POSITIONS = {
 
 
 class GameState:
-    def __init__(self):
+    def __init__(self, solo_mode=False):
+        self.solo_mode = solo_mode
         self.players               = {}
         self.winner                = None
         self.projectiles           = {}
@@ -113,12 +114,18 @@ class GameState:
         if self.game_phase != "waiting":
             return
         self.ready_players.add(player_id)
-        if self.players and all(pid in self.ready_players for pid in self.players):
+        if self._both_teams_present() and all(pid in self.ready_players for pid in self.players):
             self._start_countdown()
 
     def _handle_force_start(self):
-        if self.game_phase == "waiting" and self.wait_timer >= 90.0:
+        if self.game_phase == "waiting" and self.wait_timer >= 90.0 and self._both_teams_present():
             self._start_countdown()
+
+    def _both_teams_present(self):
+        if self.solo_mode:
+            return len(self.players) >= 1
+        teams = {p.team for p in self.players.values()}
+        return 1 in teams and 2 in teams
 
     def _start_countdown(self):
         self.game_phase      = "countdown"
@@ -128,32 +135,7 @@ class GameState:
         self.game_phase = "live"
         for player in self.players.values():
             spawn = SPAWN_POSITIONS.get(player.team, (60.0, 60.0))
-            player.x, player.y   = spawn
-            player.hp             = player.max_hp
-            player.mana           = player.max_mana
-            player.is_dead        = False
-            player.respawn_timer  = 0.0
-            player.attack_target  = None
-            player.stun_timer          = 0.0
-            player.slow_timer          = 0.0
-            player.slow_factor         = 1.0
-            player.root_timer          = 0.0
-            player.bleed_timer         = 0.0
-            player.bleed_dps           = 0.0
-            player.revealed_timer      = 0.0
-            player.is_invisible        = False
-            player._stealth_bonus_ready = False
-            player.bush_idx            = -1
-            player.armor_reduction     = 0
-            player.armor_reduction_timer = 0.0
-            for ab in player.abilities:
-                if ab:
-                    ab.is_on_cooldown = False
-                    ab.cooldown_timer = 0.0
-                    if hasattr(ab, "is_channeling"):
-                        ab.is_channeling = False
-                    if hasattr(ab, "is_active"):
-                        ab.is_active = False
+            player.reset_full(*spawn)
 
     def update(self, dt):
         # Phase management
@@ -186,14 +168,15 @@ class GameState:
         for hook in list(self.hook_projectiles.values()):
             hook.update(dt, self.players)
         self.hook_projectiles = {k: v for k, v in self.hook_projectiles.items() if not v.is_done}
-        self._handle_respawns(dt)
+        minerals_done = self._minerals_exhausted()
+        self._handle_respawns(dt, minerals_done)
 
         # Live-only: gold income, capture logic, win condition
         if self.game_phase == "live":
             for building in self.buildings.values():
                 building.update(dt, self.players)
-            update_rune(self.rune, self.players, self._minerals_exhausted(), dt)
-            self._check_win()
+            update_rune(self.rune, self.players, minerals_done, dt)
+            self._check_win(minerals_done)
 
     def _minerals_exhausted(self):
         for b in self.buildings.values():
@@ -205,8 +188,8 @@ class GameState:
                     return False
         return True
 
-    def _handle_respawns(self, dt):
-        no_respawn = self.game_phase == "live" and self._minerals_exhausted()
+    def _handle_respawns(self, dt, minerals_done):
+        no_respawn = self.game_phase == "live" and minerals_done
         for player in self.players.values():
             if not player.is_dead:
                 continue
@@ -215,18 +198,9 @@ class GameState:
             player.respawn_timer -= dt
             if player.respawn_timer <= 0:
                 spawn = SPAWN_POSITIONS.get(player.team, (60.0, 60.0))
-                player.x = spawn[0]
-                player.y = spawn[1]
-                player.hp = player.max_hp
-                player.mana = player.max_mana
-                player.dx = 0
-                player.dy = 0
-                player.attack_target = None
-                player.is_attacking  = False
-                player.is_dead       = False
-                player.bush_idx      = -1
+                player.reset_on_spawn(*spawn)
 
-    def _check_win(self):
+    def _check_win(self, minerals_done):
         if self.winner is not None:
             return
         # Primary: destroy the enemy HQ
@@ -241,7 +215,7 @@ class GameState:
                 self.game_phase = "ended"
                 return
         # Secondary (attrition): minerals exhausted + all enemies permanently dead
-        if self._minerals_exhausted():
+        if minerals_done:
             for team in (1, 2):
                 enemy = 2 if team == 1 else 1
                 enemy_players = [p for p in self.players.values() if p.team == enemy]

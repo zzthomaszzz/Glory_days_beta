@@ -47,14 +47,6 @@ def _tick_windup(player, dt):
 
 
 def _tick_attack(player, players, buildings, player_turrets, banners, dt, projectiles, proj_counter):
-    """
-    Progress a player's auto-attack cycle.
-
-    Target persists across ticks so attacks repeat until the target dies/is
-    destroyed, moves out of range, or the player picks a new target.  The timer
-    only counts down while the target is alive and in range — identical to
-    standard MOBA behaviour.
-    """
     if not player.attack_target:
         return
 
@@ -93,7 +85,8 @@ def _tick_attack(player, players, buildings, player_turrets, banners, dt, projec
 
     damage = player.attack_damage
     if getattr(player, '_stealth_bonus_ready', False):
-        damage = int(damage * 1.5)
+        stealth_ab = next((ab for ab in player.abilities if isinstance(ab, Stealth)), None)
+        damage = int(damage * (stealth_ab.bonus_mult if stealth_ab else 1.5))
         player._stealth_bonus_ready = False
     _break_stealth(player)
 

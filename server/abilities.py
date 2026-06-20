@@ -15,6 +15,7 @@ ABILITY_STATS = {
     ),
     'Fireball': dict(
         cooldown=15.0, mana_cost=80, cast_range=150, aoe_size=64,
+        base_tick_damage=30, ap_ratio=0.4,
     ),
     'Fortify': dict(
         cooldown=20.0, mana_cost=60, armor_bonus=30, mr_bonus=30,
@@ -64,6 +65,8 @@ ABILITY_STATS = {
     ),
     'Hook': dict(
         cooldown=14.0, mana_cost=60, channel_time=0.6,
+        speed=600, max_range=250, hit_radius=22,
+        pull_dist=60, damage=1200, stun_dur=1,
     ),
     'IronStack': dict(
         cooldown=0.0, mana_cost=0, max_stacks=10, armor_per_stack=5, stack_duration=5.0,
@@ -195,11 +198,13 @@ class Snipe(AbilityBase):
 
 #-------------------------------------------------------------------------------------------------------------------Fireball
 class Fireball(AbilityBase):
-    _s         = ABILITY_STATS['Fireball']
-    cooldown   = _s['cooldown']
-    mana_cost  = _s['mana_cost']
-    cast_range = _s['cast_range']
-    aoe_size   = _s['aoe_size']
+    _s               = ABILITY_STATS['Fireball']
+    cooldown         = _s['cooldown']
+    mana_cost        = _s['mana_cost']
+    cast_range       = _s['cast_range']
+    aoe_size         = _s['aoe_size']
+    base_tick_damage = _s['base_tick_damage']
+    ap_ratio         = _s['ap_ratio']
 
     def use(self, player, targets=None, target_pos=None, game_state=None):
         if not self.can_use(player):
@@ -219,7 +224,7 @@ class Fireball(AbilityBase):
     def activate(self, player, targets, target_pos=None, game_state=None):
         from server.projectiles import FireballProjectile  # avoids circular import
         tx, ty = target_pos
-        tick_damage = 30 + int(player.ability_power * 0.1)
+        tick_damage = self.base_tick_damage + int(player.ability_power * self.ap_ratio)
         pid = game_state._proj_counter[0]
         game_state._proj_counter[0] += 1
         game_state.fireball_projectiles[pid] = FireballProjectile(

@@ -25,6 +25,25 @@ HERO_ABILITIES = {
 
 HERO_REGISTRY = set(HERO_STATS)
 
+# Tunable numbers for spawned entities. Each class reads its own sub-dict.
+ENTITY_STATS = {
+    'Trap': dict(
+        root_dur=2.0, bleed_dps=30, bleed_dur=2.0,
+        sight_dur=3.0, trigger_r=20, size=16,
+    ),
+    'BurningArea': dict(
+        size=64, duration=4.0, tick_damage=20, tick_interval=0.5,
+    ),
+    'PlayerTurret': dict(
+        hp=200, armor=5, atk_range=100, atk_dmg=40,
+        atk_speed=0.8, vision=100, size=20, proj_speed=200,
+    ),
+    'Banner': dict(
+        hp=1, armor=0, vision=130, size=20,
+        duration=10.0, heal_radius=100, heal_pct_sec=0.02,
+    ),
+}
+
 
 class EntityBase:
     def __init__(self, size, x, y, vision):
@@ -103,6 +122,41 @@ class Player(EntityBase):
         self._stealth_bonus_ready = False
         self.bush_idx             = -1
 
+    def reset_on_spawn(self, x, y):
+        self.x             = x
+        self.y             = y
+        self.hp            = self.max_hp
+        self.mana          = self.max_mana
+        self.dx            = 0
+        self.dy            = 0
+        self.attack_target = None
+        self.is_attacking  = False
+        self.is_dead       = False
+        self.bush_idx      = -1
+
+    def reset_full(self, x, y):
+        self.reset_on_spawn(x, y)
+        self.respawn_timer         = 0.0
+        self.stun_timer            = 0.0
+        self.slow_timer            = 0.0
+        self.slow_factor           = 1.0
+        self.root_timer            = 0.0
+        self.bleed_timer           = 0.0
+        self.bleed_dps             = 0.0
+        self.revealed_timer        = 0.0
+        self.is_invisible          = False
+        self._stealth_bonus_ready  = False
+        self.armor_reduction       = 0
+        self.armor_reduction_timer = 0.0
+        for ab in self.abilities:
+            if ab:
+                ab.is_on_cooldown = False
+                ab.cooldown_timer = 0.0
+                if hasattr(ab, 'is_channeling'):
+                    ab.is_channeling = False
+                if hasattr(ab, 'is_active'):
+                    ab.is_active = False
+
     def to_dict(self):
         return {
             "id":           self.id,
@@ -137,12 +191,13 @@ class Player(EntityBase):
 
 #-------------------------------------------------------------------------------------------------------------------Trap
 class Trap:
-    ROOT_DUR   = 2.0
-    BLEED_DPS  = 30
-    BLEED_DUR  = 2.0
-    SIGHT_DUR  = 3.0
-    TRIGGER_R  = 20
-    SIZE       = 16
+    _s        = ENTITY_STATS['Trap']
+    ROOT_DUR  = _s['root_dur']
+    BLEED_DPS = _s['bleed_dps']
+    BLEED_DUR = _s['bleed_dur']
+    SIGHT_DUR = _s['sight_dur']
+    TRIGGER_R = _s['trigger_r']
+    SIZE      = _s['size']
 
     def __init__(self, trap_id, owner_id, team, x, y):
         self.id         = trap_id
@@ -186,10 +241,11 @@ class Trap:
 
 #-------------------------------------------------------------------------------------------------------------------BurningArea
 class BurningArea:
-    SIZE          = 64
-    DURATION      = 4.0
-    TICK_DAMAGE   = 20
-    TICK_INTERVAL = 0.5
+    _s            = ENTITY_STATS['BurningArea']
+    SIZE          = _s['size']
+    DURATION      = _s['duration']
+    TICK_DAMAGE   = _s['tick_damage']
+    TICK_INTERVAL = _s['tick_interval']
 
     def __init__(self, area_id, x, y, owner_team, tick_damage=None):
         self.id           = area_id
@@ -238,14 +294,15 @@ class BurningArea:
 
 #-------------------------------------------------------------------------------------------------------------------PlayerTurret
 class PlayerTurret:
-    HP         = 200
-    ARMOR      = 5
-    ATK_RANGE  = 100
-    ATK_DMG    = 40
-    ATK_SPEED  = 0.8
-    VISION     = 100
-    SIZE       = 20
-    PROJ_SPEED = 200
+    _s         = ENTITY_STATS['PlayerTurret']
+    HP         = _s['hp']
+    ARMOR      = _s['armor']
+    ATK_RANGE  = _s['atk_range']
+    ATK_DMG    = _s['atk_dmg']
+    ATK_SPEED  = _s['atk_speed']
+    VISION     = _s['vision']
+    SIZE       = _s['size']
+    PROJ_SPEED = _s['proj_speed']
 
     def __init__(self, turret_id, owner_id, team, x, y):
         self.id            = turret_id
@@ -283,13 +340,14 @@ class PlayerTurret:
 
 #-------------------------------------------------------------------------------------------------------------------Banner
 class Banner:
-    HP           = 1
-    ARMOR        = 0
-    VISION       = 130
-    SIZE         = 20
-    DURATION     = 10.0
-    HEAL_RADIUS  = 100
-    HEAL_PCT_SEC = 0.02
+    _s           = ENTITY_STATS['Banner']
+    HP           = _s['hp']
+    ARMOR        = _s['armor']
+    VISION       = _s['vision']
+    SIZE         = _s['size']
+    DURATION     = _s['duration']
+    HEAL_RADIUS  = _s['heal_radius']
+    HEAL_PCT_SEC = _s['heal_pct_sec']
 
     def __init__(self, banner_id, owner_id, team, x, y):
         self.id           = banner_id

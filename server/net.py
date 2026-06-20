@@ -37,7 +37,7 @@ class GameServer:
         print(f"[+] TCP connection from {peer[0]}:{peer[1]}")
         player_id = self.next_player_id
         self.next_player_id += 1
-        team = 1 if player_id % 2 == 0 else 2
+        team = self._assign_team()
 
         try:
             hero_name = "Player"
@@ -161,6 +161,13 @@ class GameServer:
                 print("[server] All players left — resetting lobby")
                 await self._reset_game()
 
+    def _assign_team(self):
+        counts = {1: 0, 2: 0}
+        for p in self.game_state.players.values():
+            if p.team in counts:
+                counts[p.team] += 1
+        return 1 if counts[1] <= counts[2] else 2
+
     async def _reset_game(self):
         for writer in list(self.writers.values()):
             try:
@@ -169,7 +176,7 @@ class GameServer:
             except Exception:
                 pass
         self.writers.clear()
-        self.game_state = GameState()
+        self.game_state = GameState(solo_mode=self.game_state.solo_mode)
         self.next_player_id = 0
         self._end_timer = None
         print("[server] Game reset — new lobby ready")

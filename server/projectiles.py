@@ -3,6 +3,7 @@ import math
 import random
 
 from shared.constants import RESPAWN_TIME, KILL_GOLD
+from server.abilities import ABILITY_STATS
 
 
 class Projectile:
@@ -134,12 +135,13 @@ class BoltProjectile:
 
 
 class HookProjectile:
-    SPEED      = 700
-    MAX_RANGE  = 400
-    HIT_RADIUS = 22
-    PULL_DIST  = 60
-    DAMAGE     = 120
-    STUN_DUR   = 0.4
+    _s         = ABILITY_STATS['Hook']
+    SPEED      = _s['speed']
+    MAX_RANGE  = _s['max_range']
+    HIT_RADIUS = _s['hit_radius']
+    PULL_DIST  = _s['pull_dist']
+    DAMAGE     = _s['damage']
+    STUN_DUR   = _s['stun_dur']
 
     def __init__(self, proj_id, owner_id, owner_team, x, y, dx, dy):
         dist            = math.sqrt(dx * dx + dy * dy) or 1
