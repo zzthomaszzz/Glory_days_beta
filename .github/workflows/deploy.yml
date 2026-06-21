@@ -28,7 +28,7 @@ jobs:
       - name: Download butler
         shell: pwsh
         run: |
-          curl.exe -L -o butler.zip "https://broth.itch.ovh/butler/windows-amd64/LATEST/archive/default"
+          curl.exe -L -o butler.zip "https://broth.itch.zone/butler/windows-amd64/LATEST/archive/default"
           Expand-Archive -Path butler.zip -DestinationPath butler -Force
 
       - name: Push to itch.io
