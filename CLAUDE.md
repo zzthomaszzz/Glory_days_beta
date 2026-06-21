@@ -35,6 +35,25 @@ Compress-Archive -Path "dist\main.exe", "dist\asset" -DestinationPath "GloryDay_
 gh release create vX.X "GloryDay_vX.X.zip" --repo zzthomaszzz/Glory_days_beta --title "GloryDay Beta vX.X" --notes "..."
 ```
 
+### Step 5 — Push to itch.io via butler
+
+itch.io game page: https://thomasng.itch.io/glory-days
+itch.io game slug: `thomasng/glory-days`
+
+Set your API key first (never paste the key in chat):
+```powershell
+$env:BUTLER_API_KEY = 'your-key-here'
+```
+
+Then push:
+```
+butler push GloryDay_vX.X.zip thomasng/glory-days:windows --userversion X.X
+```
+
+Get your API key at: https://itch.io/user/settings/api-keys
+butler is installed at: `C:\Users\Thomas\bin\butler.exe`
+Get your API key at: https://itch.io/user/settings/api-keys
+
 ### Commit message checklist
 
 When writing the release commit message, include any balance changes made since the last release:

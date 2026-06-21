@@ -23,19 +23,15 @@ BUILDING_STATS = {
     'Tower': dict(
         size=32, vision=200,
         hp=400, armor=30,
-        attack_range=150, attack_damage=70,
-        attack_speed=0.8, proj_speed=300,
+        attack_range=150, attack_damage=150,
+        attack_speed=0.5, proj_speed=300,
     ),
     'PlayerTurret': dict(
         size=20, vision=150,
-        hp=150, armor=7,
-        atk_range=120, atk_dmg=25,
-        atk_speed=1.5, proj_speed=200,
     ),
     'Banner': dict(
         size=20, vision=130,
         hp=1, armor=0,
-        duration=10.0, heal_radius=100, heal_pct_sec=0.02,
     ),
     'Shop': dict(size=32, range=120),
 }
@@ -258,15 +254,16 @@ class Tower(BuildingBase):
 
 #-------------------------------------------------------------------------------------------------------------------PlayerTurret
 class PlayerTurret(BuildingBase):
-    def __init__(self, turret_id, owner_id, team, x, y):
-        super().__init__(_PT['size'], x, y, _PT['vision'], hp=_PT['hp'], armor=_PT['armor'])
+    def __init__(self, turret_id, owner_id, team, x, y,
+                 hp, armor, atk_range, atk_dmg, atk_speed, proj_speed):
+        super().__init__(_PT['size'], x, y, _PT['vision'], hp=hp, armor=armor)
         self.id            = turret_id
         self.owner_id      = owner_id
         self.team          = team
-        self.attack_range  = _PT['atk_range']
-        self.attack_damage = _PT['atk_dmg']
-        self.attack_speed  = _PT['atk_speed']
-        self.proj_speed    = _PT['proj_speed']
+        self.attack_range  = atk_range
+        self.attack_damage = atk_dmg
+        self.attack_speed  = atk_speed
+        self.proj_speed    = proj_speed
         self.attack_timer  = 0.0
 
     def to_dict(self):
@@ -287,15 +284,15 @@ class PlayerTurret(BuildingBase):
 
 #-------------------------------------------------------------------------------------------------------------------Banner
 class Banner(BuildingBase):
-    HEAL_RADIUS  = _BN['heal_radius']
-    HEAL_PCT_SEC = _BN['heal_pct_sec']
-
-    def __init__(self, banner_id, owner_id, team, x, y):
+    def __init__(self, banner_id, owner_id, team, x, y,
+                 duration, heal_radius, heal_pct_sec):
         super().__init__(_BN['size'], x, y, _BN['vision'], hp=_BN['hp'], armor=_BN['armor'])
-        self.id       = banner_id
-        self.owner_id = owner_id
-        self.team     = team
-        self.duration = _BN['duration']
+        self.id           = banner_id
+        self.owner_id     = owner_id
+        self.team         = team
+        self.duration     = duration
+        self.heal_radius  = heal_radius
+        self.heal_pct_sec = heal_pct_sec
 
     def update(self, dt, players):
         if self.is_destroyed:
@@ -304,13 +301,13 @@ class Banner(BuildingBase):
         if self.duration <= 0:
             self.is_destroyed = True
             return
-        r2 = self.HEAL_RADIUS ** 2
+        r2 = self.heal_radius ** 2
         for p in players.values():
             if p.is_dead or p.team != self.team:
                 continue
             dx, dy = p.x - self.x, p.y - self.y
             if dx * dx + dy * dy <= r2:
-                p.hp = min(p.max_hp, p.hp + p.max_hp * self.HEAL_PCT_SEC * dt)
+                p.hp = min(p.max_hp, p.hp + p.max_hp * self.heal_pct_sec * dt)
 
     def to_dict(self):
         return {

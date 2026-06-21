@@ -1,12 +1,14 @@
 # Scene classes: SceneMenu, SceneConnecting, and SceneTest (the main gameplay scene)
 import os
 import math
+import random
 import pygame
 import asyncio
 
 from client.net import NetworkClient, ping_server
 from client.map_system import MapSystem
 from client.effects import EffectsSystem, target_is_gone
+from client.status_effects import StatusEffectRenderer
 from client.hud import HudRenderer, TEAM_COLOURS, MINI_W, MINI_H, MINI_SX, MINI_SY, _build_item_icons
 from shared.constants import (
     CLIENT_INPUT_INTERVAL,
@@ -47,6 +49,7 @@ HERO_ASSET_MAP = {
     "Watcher": os.path.join(_ROOT, "asset", "watcher.png"),
     "Player":  os.path.join(_ROOT, "asset", "default_player.png"),
 }
+
 
 _HERO_CARDS = [
     {
@@ -109,8 +112,11 @@ class SceneMenu:
         right_w  = sw - right_x
         btn_w    = int(right_w * 0.72)
         btn_h    = int(sh * 0.058)
-        self._connect_rect = pygame.Rect(
+        self._connect_rect  = pygame.Rect(
             right_x + (right_w - btn_w) // 2, int(sh * 0.87), btn_w, btn_h
+        )
+        self._practice_rect = pygame.Rect(
+            right_x + (right_w - btn_w) // 2, int(sh * 0.79), btn_w, btn_h
         )
 
         # Server card rects (precomputed for click detection)
@@ -183,6 +189,8 @@ class SceneMenu:
                         and self._server_infos[self._sel_server].get("online"):
                     srv = self._servers[self._sel_server]
                     self.next_scene = SceneConnecting(srv["host"], srv["port"], self._chosen)
+                if self._practice_rect.collidepoint(ex, ey):
+                    self.next_scene = ScenePractice(self._chosen)
 
     def update(self, dt):
         self._ping_timer -= dt
@@ -472,6 +480,16 @@ class SceneMenu:
             st_s = self._f_srv.render(st_txt, True, st_col)
             ui_surf.blit(st_s, (inner_x, cy))
 
+        # PRACTICE button
+        prc_r      = self._practice_rect
+        is_hov_prc = prc_r.collidepoint(mx, my)
+        prc_bg     = (38, 100, 52) if is_hov_prc else (28, 78, 40)
+        prc_brd    = (80, 190, 100) if is_hov_prc else (55, 145, 72)
+        pygame.draw.rect(ui_surf, prc_bg,  prc_r, border_radius=8)
+        pygame.draw.rect(ui_surf, prc_brd, prc_r, 2, border_radius=8)
+        prc_s = self._f_btn.render("PRACTICE", True, (140, 220, 155))
+        ui_surf.blit(prc_s, prc_s.get_rect(center=prc_r.center))
+
         # CONNECT button
         sel_online  = self._server_infos[self._sel_server].get("online")
         can_connect = sel_online is True
@@ -629,16 +647,23 @@ class SceneTest(SceneBase):
         self._burn_area_img = self._load_asset("burn_area.png",  (64, 64))   # smoothscaled to actual area size
         self._banner_img    = self._load_asset("banner.png",     (20, 30))
         self._bullet_img    = self._load_asset("bullet.png",     (6,  6))
-        self._stun_icon_img = self._load_asset("stun_icon.png",  (12, 12))
-        self._slow_icon_img = self._load_asset("slow_icon.png",  (12, 12))
         self._bolt_img      = self._load_asset("bolt.png",       (20, 5))
+        self.status_fx      = StatusEffectRenderer(self._load_asset)
         self._trap_img      = self._load_asset("trap.png",       (16, 16))
 
         # Lobby / ready state
         self._my_ready = False
 
-        self._font_floater = pygame.font.SysFont("consolas", 14, bold=True)
-        self._font_label   = pygame.font.SysFont("consolas", 10)
+        self._font_floater   = pygame.font.SysFont("consolas", 14, bold=True)
+        self._font_label     = pygame.font.SysFont("consolas", 10)
+        self._font_timer     = pygame.font.SysFont("consolas", 28, bold=True)
+        self._font_kda       = pygame.font.SysFont("consolas", 18, bold=True)
+        self._font_kda_sm    = pygame.font.SysFont("consolas", 11)
+        self._font_score_hdr = pygame.font.SysFont("consolas", 16, bold=True)
+        self._font_score_row = pygame.font.SysFont("consolas", 13)
+
+        # Scoreboard
+        self._scoreboard_open = False
 
         # Visual effects
         self.effects              = EffectsSystem(self._font_floater)
@@ -646,6 +671,24 @@ class SceneTest(SceneBase):
         self._local_attack_target = None   # (target_type, target_id) — drives indicator ring
         self._hovered_target      = None   # (target_type, target_id) — enemy under cursor
         self._vfx_time            = 0.0    # monotonic clock for pulsing animations
+
+        #Screen shake
+        self._shake_timer     = 0.0
+        self._shake_duration  = 0.3
+        self._shake_intensity = 0.0
+        self._shake_ox        = 0
+        self._shake_oy        = 0
+
+        #Stealth shimmer transitions  pid -> countdown timer
+        self._stealth_shimmer = {}
+        self._prev_invisible  = {}
+
+        #Ground Slam onset tracking (to fire shake on first ring frame)
+        self._prev_slam_active = set()
+
+        #Projectile trail history  (type_str, pid) -> list[(wx, wy)]
+        self._proj_trails  = {}
+        self._trail_surf   = pygame.Surface((VIEWPORT_W, VIEWPORT_H), pygame.SRCALPHA)
 
     def _load_asset(self, filename, size=None):
         path = os.path.join(_ROOT, "asset", filename)
@@ -657,7 +700,7 @@ class SceneTest(SceneBase):
         return img
 
     def _w2s(self, wx, wy):
-        return int(wx - self.cam_x), int(wy - self.cam_y)
+        return int(wx - self.cam_x + self._shake_ox), int(wy - self.cam_y + self._shake_oy)
 
     def _is_on_screen(self, wx, wy, pad=32):
         return (self.cam_x - pad <= wx <= self.cam_x + VIEWPORT_W + pad and
@@ -797,6 +840,7 @@ class SceneTest(SceneBase):
                     case pygame.K_c:      self._show_range = not self._show_range
                     case pygame.K_h:      self._show_debug = not self._show_debug
                     case pygame.K_SPACE:  self._cam_locked = True
+                    case pygame.K_TAB:    self._scoreboard_open = not self._scoreboard_open
                     case pygame.K_ESCAPE:
                         if self._shop_open:
                             self._shop_open = False
@@ -1013,8 +1057,10 @@ class SceneTest(SceneBase):
         # Process new snapshot for HP/gold diffs
         if self.client.last_snapshot_time != self._last_proc_snap:
             self._last_proc_snap = self.client.last_snapshot_time
-            self.effects.process_snapshot(snap, self.client.my_player_id, self.client.my_team,
-                                          self._is_visible, self._is_on_screen)
+            for ev in self.effects.process_snapshot(snap, self.client.my_player_id, self.client.my_team,
+                                                    self._is_visible, self._is_on_screen):
+                if ev["type"] == "death":
+                    self._trigger_shake(3.0, 0.3)
 
         # Clear indicator if the target has died or been destroyed
         if self._local_attack_target:
@@ -1050,6 +1096,59 @@ class SceneTest(SceneBase):
         self.effects.tick(dt)
         self._vfx_time += dt
 
+        # Screen shake decay
+        if self._shake_timer > 0:
+            self._shake_timer = max(0.0, self._shake_timer - dt)
+            frac = self._shake_timer / self._shake_duration
+            amp  = self._shake_intensity * frac
+            self._shake_ox = int(amp * math.sin(self._vfx_time * 43))
+            self._shake_oy = int(amp * math.cos(self._vfx_time * 37))
+        else:
+            self._shake_ox = 0
+            self._shake_oy = 0
+
+        # Stealth shimmer transitions
+        for pid, p_data in snap.get("players", {}).items():
+            curr_invis = p_data.get("is_invisible", False)
+            if self._prev_invisible.get(pid) != curr_invis:
+                self._stealth_shimmer[pid] = 0.4
+            self._prev_invisible[pid] = curr_invis
+        self._stealth_shimmer = {pid: t - dt for pid, t in self._stealth_shimmer.items() if t - dt > 0}
+
+        # Ground Slam shake — trigger on the first frame ring becomes active
+        curr_slam = {pid for pid, p in snap.get("players", {}).items()
+                     if any(ab and ab.get("name") == "GroundSlam" and ab.get("ring_active")
+                            for ab in p.get("abilities", []))}
+        if curr_slam - self._prev_slam_active:
+            self._trigger_shake(2.0, 0.25)
+        self._prev_slam_active = curr_slam
+
+    def _draw_proj_trail(self, key, wx, wy, color, dot_size, max_len):
+        """Append (wx, wy) to the trail for key and draw past positions to self._trail_surf."""
+        trail = self._proj_trails.setdefault(key, [])
+        trail.append((wx, wy))
+        if len(trail) > max_len:
+            del trail[0]
+        n = len(trail)
+        if n < 2:
+            return
+        r, g, b = color
+        for i, (twx, twy) in enumerate(trail[:-1]):
+            frac = (i + 1) / n
+            alpha = int(170 * frac)
+            size  = max(1, int(dot_size * frac))
+            tsx, tsy = self._w2s(twx, twy)
+            if 0 <= tsx < VIEWPORT_W and 0 <= tsy < VIEWPORT_H:
+                pygame.draw.circle(self._trail_surf, (r, g, b, alpha), (tsx, tsy), size)
+
+    def _trigger_shake(self, intensity, duration):
+        """Start a screen shake if the new shake would be stronger than the current one."""
+        curr_strength = self._shake_intensity * (self._shake_timer / max(self._shake_duration, 0.001))
+        if intensity > curr_strength:
+            self._shake_intensity = intensity
+            self._shake_duration  = duration
+            self._shake_timer     = duration
+
     def _get_hero_image(self, hero_name):
         if hero_name not in self._hero_images:
             path = HERO_ASSET_MAP.get(hero_name)
@@ -1060,8 +1159,9 @@ class SceneTest(SceneBase):
                 self._hero_images[hero_name] = None
         return self._hero_images[hero_name]
 
+
     def render(self, screen):
-        screen.blit(self.map_bg, (-int(self.cam_x), -int(self.cam_y)))
+        screen.blit(self.map_bg, (-int(self.cam_x) + self._shake_ox, -int(self.cam_y) + self._shake_oy))
 
         snap    = self.client.latest_snapshot
         my_team = self.client.my_team
@@ -1109,8 +1209,12 @@ class SceneTest(SceneBase):
                 cd_s = self._font_label.render(f"{rune.get('respawn_timer', 0):.0f}s", True, (130, 120, 160))
                 screen.blit(cd_s, cd_s.get_rect(centerx=rx, top=ry + 17))
             else:
-                pygame.draw.circle(screen, (140, 60, 200), (rx, ry), 16, 3)
-                pygame.draw.circle(screen, (200, 130, 255), (rx, ry), 7)
+                pulse    = 0.5 + 0.5 * math.sin(self._vfx_time * 3.5)
+                inner_r  = int(6 + pulse * 2)
+                out_surf = pygame.Surface((38, 38), pygame.SRCALPHA)
+                pygame.draw.circle(out_surf, (140, 60, 200, int(120 + 80 * pulse)), (19, 19), 16, 3)
+                screen.blit(out_surf, (rx - 19, ry - 19))
+                pygame.draw.circle(screen, (200, 130, 255), (rx, ry), inner_r)
                 if rune_state == "capturing":
                     t       = rune.get("capture_timer", 0)
                     prog    = min(t / max(RUNE_CAPTURE_TIME, 0.001), 1.0)
@@ -1123,15 +1227,6 @@ class SceneTest(SceneBase):
                                     min(start_a, end_a), max(start_a, end_a), 3)
             lbl_s = self._font_label.render("RUNE", True, (180, 120, 230))
             screen.blit(lbl_s, lbl_s.get_rect(centerx=rx, bottom=ry - 18))
-
-        # ── Bushes ───────────────────────────────────────────────────────────
-        for bush in BUSHES:
-            bsx, bsy = self._w2s(bush.x, bush.y)
-            bsw, bsh = bush.width, bush.height
-            _b = pygame.Surface((bsw, bsh), pygame.SRCALPHA)
-            _b.fill((30, 110, 30, 120))
-            screen.blit(_b, (bsx, bsy))
-            pygame.draw.rect(screen, (20, 80, 20), (bsx, bsy, bsw, bsh), 2)
 
         for pid in self.client.get_entity_ids("players"):
             pos = self.client.get_interpolated_pos("players", pid)
@@ -1156,11 +1251,6 @@ class SceneTest(SceneBase):
                     continue
             sx, sy = self._w2s(pos[0], pos[1])
             abilities = p_data.get("abilities", [])
-            # Fade own-team invisible players to 50% alpha
-            if is_invisible and not enemy:
-                _ghost = pygame.Surface((32, 32), pygame.SRCALPHA)
-                _ghost.fill((150, 100, 200, 110))
-                screen.blit(_ghost, (sx - 16, sy - 16))
 
             #Spin aura (below hero so it renders behind the sprite)
             spinning = any(ab and ab.get("name") == "Spin" and ab.get("is_spinning") for ab in abilities)
@@ -1254,11 +1344,25 @@ class SceneTest(SceneBase):
                                     pygame.Rect(sx - r, sy - r, r * 2, r * 2),
                                     math.pi / 2, math.pi / 2 + arc_angle, 3)
 
-            #Hero sprite
+            #Hero sprite — with stealth transparency and shimmer transition
             hero = p_data.get("hero", "Player")
             img  = self._get_hero_image(hero)
             if img:
-                screen.blit(img, (sx - 16, sy - 16))
+                shimmer_t = self._stealth_shimmer.get(pid, 0)
+                if shimmer_t > 0:
+                    flicker = abs(math.sin(shimmer_t * 28))
+                    s_copy  = img.copy()
+                    s_copy.set_alpha(int(55 + 200 * flicker))
+                    screen.blit(s_copy, (sx - 16, sy - 16))
+                    _shim = pygame.Surface((32, 32), pygame.SRCALPHA)
+                    _shim.fill((180, 140, 255, int(100 * flicker)))
+                    screen.blit(_shim, (sx - 16, sy - 16))
+                elif is_invisible and not enemy:
+                    s_copy = img.copy()
+                    s_copy.set_alpha(80)
+                    screen.blit(s_copy, (sx - 16, sy - 16))
+                else:
+                    screen.blit(img, (sx - 16, sy - 16))
             else:
                 pygame.draw.circle(screen, TEAM_COLOURS.get(p_data.get("team"), (255, 255, 255)), (sx, sy), 8)
 
@@ -1271,24 +1375,7 @@ class SceneTest(SceneBase):
                                                TEAM_COLOURS.get(p_data.get("team"), (200, 200, 200)))
             screen.blit(lbl_surf, lbl_surf.get_rect(centerx=sx, bottom=sy - 22))
 
-            #Status icons (stun / slow) above the name label
-            icon_x = sx - 6
-            if p_data.get("stun_timer", 0) > 0:
-                if self._stun_icon_img:
-                    screen.blit(self._stun_icon_img, (icon_x, sy - 36))
-                    icon_x += 13
-                else:
-                    pygame.draw.circle(screen, (240, 200, 40), (sx, sy), 20, 2)
-            if p_data.get("slow_timer", 0) > 0:
-                if self._slow_icon_img:
-                    screen.blit(self._slow_icon_img, (icon_x, sy - 36))
-                    icon_x += 13
-                else:
-                    pygame.draw.circle(screen, (60, 180, 220), (sx, sy), 20, 1)
-            if p_data.get("root_timer", 0) > 0:
-                pygame.draw.circle(screen, (80, 200, 80), (sx, sy), 20, 2)
-            if p_data.get("bleed_timer", 0) > 0:
-                pygame.draw.circle(screen, (200, 30, 30), (sx, sy - 4), 3)
+            self.status_fx.draw(screen, p_data, sx, sy, self._vfx_time)
 
         for t in snap.get("turrets", {}).values():
             if t.get("is_destroyed"):
@@ -1321,6 +1408,40 @@ class SceneTest(SceneBase):
             lbl = self._font_label.render("$", True, (255, 230, 80))
             screen.blit(lbl, lbl.get_rect(center=(sx + sz // 2, sy + sz // 2)))
 
+        # ── Projectile trails pass — draw all trails to trail_surf first ────────
+        self._trail_surf.fill((0, 0, 0, 0))
+        active_trail_keys = set()
+
+        for pid, proj in snap.get("projectiles", {}).items():
+            pos = self.client.get_interpolated_xy("projectiles", pid)
+            if pos is None:
+                continue
+            key = ("proj", pid)
+            active_trail_keys.add(key)
+            self._draw_proj_trail(key, pos[0], pos[1], (220, 220, 200), 2, 5)
+
+        for pid, fp in snap.get("fireball_projectiles", {}).items():
+            pos = self.client.get_interpolated_xy("fireball_projectiles", pid)
+            if pos is None:
+                continue
+            key = ("fb", pid)
+            active_trail_keys.add(key)
+            self._draw_proj_trail(key, pos[0], pos[1], (255, 140, 20), 4, 8)
+
+        for pid, bp in snap.get("bolt_projectiles", {}).items():
+            key = ("bolt", pid)
+            active_trail_keys.add(key)
+            self._draw_proj_trail(key, bp["x"], bp["y"], (200, 200, 230), 2, 6)
+
+        for pid, hp in snap.get("hook_projectiles", {}).items():
+            key = ("hook", pid)
+            active_trail_keys.add(key)
+            self._draw_proj_trail(key, hp["x"], hp["y"], (210, 110, 20), 2, 5)
+
+        screen.blit(self._trail_surf, (0, 0))
+        self._proj_trails = {k: v for k, v in self._proj_trails.items() if k in active_trail_keys}
+
+        # ── Projectile sprites ───────────────────────────────────────────────
         for pid, proj in snap.get("projectiles", {}).items():
             pos = self.client.get_interpolated_xy("projectiles", pid)
             if pos is None:
@@ -1398,7 +1519,7 @@ class SceneTest(SceneBase):
                 pygame.draw.rect(screen, (220, 180, 40), (tx - half, ty - half, half * 2, half * 2), 1)
 
         #Bolt projectiles — slow rotating sprite
-        for bp in snap.get("bolt_projectiles", {}).values():
+        for pid, bp in snap.get("bolt_projectiles", {}).items():
             bx, by = self._w2s(bp["x"], bp["y"])
             angle  = bp.get("angle", 0)
             if self._bolt_img:
@@ -1408,8 +1529,8 @@ class SceneTest(SceneBase):
                 team_col = TEAM_COLOURS.get(bp.get("owner_team"), (200, 200, 100))
                 pygame.draw.rect(screen, team_col, (bx - 10, by - 2, 20, 4))
 
-        #Hook projectiles — orange circle with short chain trail
-        for hp in snap.get("hook_projectiles", {}).values():
+        #Hook projectiles — orange circle
+        for pid, hp in snap.get("hook_projectiles", {}).items():
             hx, hy = self._w2s(hp["x"], hp["y"])
             pygame.draw.circle(screen, (210, 110, 20), (hx, hy), 5)
             pygame.draw.circle(screen, (255, 190, 60), (hx, hy), 5, 2)
@@ -1590,6 +1711,119 @@ class SceneTest(SceneBase):
             quit_confirm=self._quit_confirm,
         )
 
+        game_phase = snap.get("game_phase", "live")
+        if game_phase == "live":
+            self._render_timer(ui_surf, snap)
+            self._render_own_kda(ui_surf, my_data)
+
+        if self._scoreboard_open:
+            self._render_scoreboard(ui_surf, snap)
+
+    def _render_timer(self, ui_surf, snap):
+        t       = int(snap.get("match_time", 0))
+        t_str   = f"{t // 60:02d}:{t % 60:02d}"
+        t_surf  = self._font_timer.render(t_str, True, (230, 220, 190))
+        t_rect  = t_surf.get_rect(centerx=_SCREEN_W // 2, top=10)
+        bg      = pygame.Surface((t_rect.w + 20, t_rect.h + 8), pygame.SRCALPHA)
+        bg.fill((8, 8, 18, 170))
+        pygame.draw.rect(bg, (60, 56, 44, 200), (0, 0, bg.get_width(), bg.get_height()), 1)
+        ui_surf.blit(bg, (t_rect.x - 10, t_rect.y - 4))
+        ui_surf.blit(t_surf, t_rect)
+
+    def _render_own_kda(self, ui_surf, my_data):
+        k = my_data.get("kills",   0)
+        d = my_data.get("deaths",  0)
+        a = my_data.get("assists", 0)
+        kda_surf  = self._font_kda.render(f"{k}  /  {d}  /  {a}", True, (225, 215, 185))
+        lbl_surf  = self._font_kda_sm.render("K   /   D   /   A", True, (130, 122, 95))
+        pad = 16
+        kda_rect  = kda_surf.get_rect(right=_SCREEN_W - pad, top=12)
+        lbl_rect  = lbl_surf.get_rect(right=_SCREEN_W - pad, top=kda_rect.bottom + 3)
+        bg_w  = max(kda_rect.w, lbl_rect.w) + 20
+        bg_h  = lbl_rect.bottom - kda_rect.top + 8
+        bg    = pygame.Surface((bg_w, bg_h), pygame.SRCALPHA)
+        bg.fill((8, 8, 18, 170))
+        pygame.draw.rect(bg, (60, 56, 44, 200), (0, 0, bg_w, bg_h), 1)
+        ui_surf.blit(bg, (_SCREEN_W - pad - bg_w + 10, kda_rect.top - 4))
+        ui_surf.blit(kda_surf, kda_rect)
+        ui_surf.blit(lbl_surf, lbl_rect)
+
+    def _render_scoreboard(self, ui_surf, snap):
+        players_data = snap.get("players", {})
+        team_1 = [(pid, pd) for pid, pd in players_data.items() if pd.get("team") == 1]
+        team_2 = [(pid, pd) for pid, pd in players_data.items() if pd.get("team") == 2]
+
+        ov_w, ov_h = 740, 380
+        ov_x = _SCREEN_W // 2 - ov_w // 2
+        ov_y = _SCREEN_H // 2 - ov_h // 2
+
+        ov = pygame.Surface((ov_w, ov_h), pygame.SRCALPHA)
+        ov.fill((8, 10, 22, 225))
+        pygame.draw.rect(ov, (55, 52, 75, 255), (0, 0, ov_w, ov_h), 2)
+
+        title = self._font_score_hdr.render("SCOREBOARD", True, (215, 205, 175))
+        ov.blit(title, title.get_rect(centerx=ov_w // 2, top=10))
+
+        col_x = {"hero": 12, "k": 200, "d": 256, "a": 312, "items": 370}
+        hdr_y = 36
+        for lbl, cx in [("Hero", col_x["hero"]), ("K", col_x["k"]),
+                         ("D", col_x["d"]), ("A", col_x["a"]), ("Items", col_x["items"])]:
+            s = self._font_score_row.render(lbl, True, (145, 135, 105))
+            ov.blit(s, (cx, hdr_y))
+        pygame.draw.line(ov, (55, 52, 75), (10, hdr_y + 16), (ov_w - 10, hdr_y + 16), 1)
+
+        y = hdr_y + 22
+
+        def _draw_row(pid, pd, name_col):
+            nonlocal y
+            hero = pd.get("hero", "?")
+            k    = pd.get("kills",   0)
+            d    = pd.get("deaths",  0)
+            a    = pd.get("assists", 0)
+            if pid == self.client.my_player_id:
+                hl = pygame.Surface((ov_w - 4, 22), pygame.SRCALPHA)
+                hl.fill((50, 80, 130, 90))
+                ov.blit(hl, (2, y - 2))
+            hero_s = self._font_score_row.render(hero[:16], True, name_col)
+            ov.blit(hero_s, (col_x["hero"], y))
+            for val, cx in [(k, col_x["k"]), (d, col_x["d"]), (a, col_x["a"])]:
+                vs = self._font_score_row.render(str(val), True, (200, 200, 200))
+                ov.blit(vs, (cx, y))
+            inv = pd.get("inventory", [])
+            ix  = col_x["items"]
+            for item in inv[:6]:
+                if item:
+                    icon = self.hud._item_icons.get(item)
+                    if icon:
+                        ov.blit(pygame.transform.scale(icon, (18, 18)), (ix, y - 1))
+                    else:
+                        pygame.draw.rect(ov, (90, 90, 90), (ix, y - 1, 18, 18))
+                else:
+                    pygame.draw.rect(ov, (28, 30, 42), (ix, y - 1, 18, 18), 1)
+                ix += 22
+            y += 28
+
+        t1_lbl = self._font_score_hdr.render("BLUE TEAM", True, (80, 130, 225))
+        ov.blit(t1_lbl, (col_x["hero"], y))
+        y += 22
+        for pid, pd in team_1:
+            _draw_row(pid, pd, (185, 200, 235))
+
+        y += 10
+        pygame.draw.line(ov, (40, 40, 60), (10, y), (ov_w - 10, y), 1)
+        y += 10
+
+        t2_lbl = self._font_score_hdr.render("RED TEAM", True, (225, 80, 80))
+        ov.blit(t2_lbl, (col_x["hero"], y))
+        y += 22
+        for pid, pd in team_2:
+            _draw_row(pid, pd, (235, 185, 185))
+
+        hint = self._font_score_row.render("[TAB] close", True, (90, 88, 110))
+        ov.blit(hint, hint.get_rect(centerx=ov_w // 2, bottom=ov_h - 8))
+
+        ui_surf.blit(ov, (ov_x, ov_y))
+
     def _draw_capture_point(self, screen, b):
         bx, by, bs = b["x"], b["y"], b["size"]
         sx, sy = self._w2s(bx, by)
@@ -1604,6 +1838,12 @@ class SceneTest(SceneBase):
                 pygame.draw.rect(screen, col, (sx, sy, bs, bs))
         elif self._capture_img:
             screen.blit(self._capture_img, (sx, sy))
+            pulse   = 0.5 + 0.5 * math.sin(self._vfx_time * 2.5 + bx * 0.02)
+            ring_r  = bs // 2 + 3 + int(pulse * 2)
+            rsurf   = pygame.Surface((ring_r * 2 + 4, ring_r * 2 + 4), pygame.SRCALPHA)
+            pygame.draw.circle(rsurf, (160, 120, 220, int(55 + 40 * pulse)),
+                               (ring_r + 2, ring_r + 2), ring_r, 2)
+            screen.blit(rsurf, (cx - ring_r - 2, cy - ring_r - 2))
         else:
             col = TEAM_COLOURS.get(0, (160, 160, 160))
             pygame.draw.circle(screen, col, (cx, cy), bs // 2)
@@ -1631,3 +1871,61 @@ class SceneTest(SceneBase):
             return
         pygame.draw.rect(screen, (80, 0, 0), (x, y, width, 4))
         pygame.draw.rect(screen, (0, 200, 80), (x, y, int(width * hp / max_hp), 4))
+
+
+#-------------------------------------------------------------------------------------------------------------------Practice
+_PRACTICE_R_DESC = {
+    "Rat":     "R: Stealth toggle",
+    "Mage":    "R: Teleport (click)",
+    "Samurai": "R: Spin (5s aura)",
+    "Hunter":  "R: Fortify (blue ring)",
+    "Watcher": "R: Hook (click)",
+    "Soldier": "R: Bolt (click)",
+}
+
+
+class ScenePractice(SceneTest):
+    """SceneTest driven by a local PracticeClient — no server required."""
+
+    def __init__(self, hero_name: str):
+        from client.practice import PracticeClient
+        self._pc = PracticeClient(hero_name)
+        super().__init__(self._pc)
+        self._font_overlay = pygame.font.SysFont("consolas", 12, bold=True)
+        r_desc = _PRACTICE_R_DESC.get(hero_name, "R: Special")
+        self._hint = (
+            f"WASD: Move  |  Q: Fireball  |  E: Slam ring  |  {r_desc}  |  "
+            f"Auto-attacks nearest  |  ESC: Exit"
+        )
+
+    # Full-map visibility — bypass fog of war in practice
+    def _is_visible(self, x, y, entity_id=None):
+        return True
+
+    def update(self, dt: float):
+        self._pc.update(dt)
+        super().update(dt)
+
+    def process_input(self, events):
+        forward = []
+        exit_practice = False
+        for event in events:
+            if (event.type == pygame.KEYDOWN
+                    and event.key == pygame.K_ESCAPE
+                    and self._placement_mode is None
+                    and self._entity_target_mode is None
+                    and not self._shop_open):
+                exit_practice = True
+            else:
+                forward.append(event)
+        super().process_input(forward)
+        if exit_practice:
+            self.next_scene = SceneMenu()
+
+    def render_ui(self, ui_surf):
+        super().render_ui(ui_surf)
+        pad = 8
+        lbl = self._font_overlay.render("PRACTICE MODE", True, (220, 185, 45))
+        ui_surf.blit(lbl, (pad, pad))
+        hint = self._font_overlay.render(self._hint, True, (140, 130, 90))
+        ui_surf.blit(hint, (pad, pad + lbl.get_height() + 3))

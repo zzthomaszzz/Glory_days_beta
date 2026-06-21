@@ -10,16 +10,17 @@ import math
 # ---------------------------------------------------------------------------
 ABILITY_STATS = {
     'Snipe': dict(
-        cooldown=30.0, mana_cost=120, channel_time=2.5,
-        shot_damage=225, true_sight_dur=3.0, cast_range=250,
+        cooldown=20.0, mana_cost=120, channel_time=2.5,
+        shot_damage=225, true_sight_dur=3.0, cast_range=300,
     ),
     'Fireball': dict(
-        cooldown=15.0, mana_cost=80, cast_range=150, aoe_size=64,
-        base_tick_damage=30, ap_ratio=0.4,
+        cooldown=11.0, mana_cost=80, cast_range=150, aoe_size=64,
+        base_tick_damage=40, ap_ratio=0.6,
+        ba_duration=4.0, ba_tick_interval=0.5, proj_speed=350,
     ),
     'Fortify': dict(
-        cooldown=20.0, mana_cost=60, armor_bonus=30, mr_bonus=30,
-        duration=5.0, regen_per_sec=10.0,
+        cooldown=12.0, mana_cost=60, armor_bonus=50, mr_bonus=50,
+        duration=5.0, regen_per_sec=20.0,
     ),
     'Mend': dict(
         cooldown=5.5, mana_cost=0, hp_cost=50, heal_amount=100, cast_range=120,
@@ -29,17 +30,19 @@ ABILITY_STATS = {
         slow_factor=0.7, slow_duration=2.0, ring_speed=350.0,
     ),
     'Charge': dict(
-        cooldown=10.0, mana_cost=80, cast_range=200, damage=50, stun_dur=1,
+        cooldown=10.0, mana_cost=80, cast_range=2150, damage=50, stun_dur=1,
     ),
     'Dash': dict(
-        cooldown=6.0, mana_cost=50, dash_range=120,
+        cooldown=3.0, mana_cost=30, dash_range=80,
     ),
     'Teleport': dict(
         cooldown=18.0, mana_cost=80, channel_time=1.5, cast_range=300,
         pulse_damage=80, pulse_max_range=150, pulse_speed=150.0,
     ),
     'PlaceTurret': dict(
-        cooldown=15.0, mana_cost=80, max_turrets=2, place_range=50,
+        cooldown=10.0, mana_cost=50, max_turrets=2, place_range=50,
+        turret_hp=150, turret_armor=7, turret_atk_range=120, turret_atk_dmg=25,
+        turret_atk_speed=1.5, turret_proj_speed=200,
     ),
     'Spin': dict(
         cooldown=15.0, mana_cost=80, spin_duration=5.0, spin_radius=80,
@@ -49,19 +52,22 @@ ABILITY_STATS = {
         cooldown=0.0, mana_cost=0, crit_chance=0.25, crit_mult=1.4,
     ),
     'Stealth': dict(
-        cooldown=20.0, mana_cost=60, duration=12.0, bonus_mult=1.5,
+        cooldown=20.0, mana_cost=60, duration=10.0, bonus_mult=1.4,
     ),
     'PlaceTrap': dict(
-        cooldown=18.0, mana_cost=50, max_traps=3, place_range=200,
+        cooldown=5.0, mana_cost=20, max_traps=2, place_range=200,
+        trap_root_dur=2.0, trap_bleed_dps=80, trap_bleed_dur=2.0,
+        trap_sight_dur=3.0, trap_trigger_r=20, trap_size=16,
     ),
     'Bolt': dict(
-        cooldown=12.0, mana_cost=70, damage=280, speed=175.0,
+        cooldown=20.0, mana_cost=70, damage=200, speed=175.0,
     ),
     'Recall': dict(
         cooldown=8.0, mana_cost=0, channel_time=4.0,
     ),
     'PlaceBanner': dict(
         cooldown=30.0, mana_cost=100, place_range=60,
+        banner_duration=10.0, banner_heal_radius=100, banner_heal_pct_sec=0.02,
     ),
     'Hook': dict(
         cooldown=14.0, mana_cost=60, channel_time=0.6,
@@ -202,6 +208,9 @@ class Fireball(AbilityBase):
     aoe_size         = _s['aoe_size']
     base_tick_damage = _s['base_tick_damage']
     ap_ratio         = _s['ap_ratio']
+    ba_duration      = _s['ba_duration']
+    ba_tick_interval = _s['ba_tick_interval']
+    proj_speed       = _s['proj_speed']
 
     def use(self, player, targets=None, target_pos=None, game_state=None):
         if not self.can_use(player):
@@ -230,6 +239,10 @@ class Fireball(AbilityBase):
             x=player.x, y=player.y,
             target_x=tx, target_y=ty,
             tick_damage=tick_damage,
+            ba_size=self.aoe_size,
+            ba_duration=self.ba_duration,
+            ba_tick_interval=self.ba_tick_interval,
+            speed=self.proj_speed,
         )
 
     def to_dict(self):
@@ -579,11 +592,17 @@ class Teleport(AbilityBase):
 
 #-------------------------------------------------------------------------------------------------------------------PlaceTurret
 class PlaceTurret(AbilityBase):
-    _s          = ABILITY_STATS['PlaceTurret']
-    cooldown    = _s['cooldown']
-    mana_cost   = _s['mana_cost']
-    max_turrets = _s['max_turrets']
-    place_range = _s['place_range']
+    _s                = ABILITY_STATS['PlaceTurret']
+    cooldown          = _s['cooldown']
+    mana_cost         = _s['mana_cost']
+    max_turrets       = _s['max_turrets']
+    place_range       = _s['place_range']
+    turret_hp         = _s['turret_hp']
+    turret_armor      = _s['turret_armor']
+    turret_atk_range  = _s['turret_atk_range']
+    turret_atk_dmg    = _s['turret_atk_dmg']
+    turret_atk_speed  = _s['turret_atk_speed']
+    turret_proj_speed = _s['turret_proj_speed']
 
     def use(self, player, targets=None, target_pos=None, game_state=None):
         if not self.can_use(player):
@@ -611,7 +630,15 @@ class PlaceTurret(AbilityBase):
         tx, ty = target_pos
         tid = game_state._turret_counter[0]
         game_state._turret_counter[0] += 1
-        game_state.player_turrets[tid] = PlayerTurret(tid, player.id, player.team, tx, ty)
+        game_state.player_turrets[tid] = PlayerTurret(
+            tid, player.id, player.team, tx, ty,
+            hp         = self.turret_hp,
+            armor      = self.turret_armor,
+            atk_range  = self.turret_atk_range,
+            atk_dmg    = self.turret_atk_dmg,
+            atk_speed  = self.turret_atk_speed,
+            proj_speed = self.turret_proj_speed,
+        )
 
     def to_dict(self):
         d = super().to_dict()
@@ -740,11 +767,17 @@ class Stealth(AbilityBase):
 
 #-------------------------------------------------------------------------------------------------------------------PlaceTrap
 class PlaceTrap(AbilityBase):
-    _s          = ABILITY_STATS['PlaceTrap']
-    cooldown    = _s['cooldown']
-    mana_cost   = _s['mana_cost']
-    max_traps   = _s['max_traps']
-    place_range = _s['place_range']
+    _s             = ABILITY_STATS['PlaceTrap']
+    cooldown       = _s['cooldown']
+    mana_cost      = _s['mana_cost']
+    max_traps      = _s['max_traps']
+    place_range    = _s['place_range']
+    trap_root_dur  = _s['trap_root_dur']
+    trap_bleed_dps = _s['trap_bleed_dps']
+    trap_bleed_dur = _s['trap_bleed_dur']
+    trap_sight_dur = _s['trap_sight_dur']
+    trap_trigger_r = _s['trap_trigger_r']
+    trap_size      = _s['trap_size']
 
     def use(self, player, targets=None, target_pos=None, game_state=None):
         if not self.can_use(player):
@@ -765,7 +798,15 @@ class PlaceTrap(AbilityBase):
         from server.entities import Trap  # avoids circular import
         tid = game_state._trap_counter[0]
         game_state._trap_counter[0] += 1
-        game_state.traps[tid] = Trap(tid, player.id, player.team, tx, ty)
+        game_state.traps[tid] = Trap(
+            tid, player.id, player.team, tx, ty,
+            root_dur  = self.trap_root_dur,
+            bleed_dps = self.trap_bleed_dps,
+            bleed_dur = self.trap_bleed_dur,
+            sight_dur = self.trap_sight_dur,
+            trigger_r = self.trap_trigger_r,
+            size      = self.trap_size,
+        )
         return True
 
     def to_dict(self):
@@ -876,10 +917,13 @@ class Recall(AbilityBase):
 
 #-------------------------------------------------------------------------------------------------------------------PlaceBanner
 class PlaceBanner(AbilityBase):
-    _s          = ABILITY_STATS['PlaceBanner']
-    cooldown    = _s['cooldown']
-    mana_cost   = _s['mana_cost']
-    place_range = _s['place_range']
+    _s                  = ABILITY_STATS['PlaceBanner']
+    cooldown            = _s['cooldown']
+    mana_cost           = _s['mana_cost']
+    place_range         = _s['place_range']
+    banner_duration     = _s['banner_duration']
+    banner_heal_radius  = _s['banner_heal_radius']
+    banner_heal_pct_sec = _s['banner_heal_pct_sec']
 
     def use(self, player, targets=None, target_pos=None, game_state=None):
         if not self.can_use(player):
@@ -896,7 +940,12 @@ class PlaceBanner(AbilityBase):
         from server.buildings import Banner  # avoids circular import
         bid = game_state._banner_counter[0]
         game_state._banner_counter[0] += 1
-        game_state.banners[bid] = Banner(bid, player.id, player.team, tx, ty)
+        game_state.banners[bid] = Banner(
+            bid, player.id, player.team, tx, ty,
+            duration     = self.banner_duration,
+            heal_radius  = self.banner_heal_radius,
+            heal_pct_sec = self.banner_heal_pct_sec,
+        )
         return True
 
     def to_dict(self):

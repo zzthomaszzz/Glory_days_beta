@@ -25,16 +25,6 @@ HERO_ABILITIES = {
 
 HERO_REGISTRY = set(HERO_STATS)
 
-# Tunable numbers for spawned placed effects. Each class reads its own sub-dict.
-ENTITY_STATS = {
-    'Trap': dict(
-        root_dur=2.0, bleed_dps=30, bleed_dur=2.0,
-        sight_dur=3.0, trigger_r=20, size=16,
-    ),
-    'BurningArea': dict(
-        size=64, duration=4.0, tick_damage=20, tick_interval=0.5,
-    ),
-}
 
 
 class EntityBase:
@@ -84,6 +74,11 @@ class Player(EntityBase):
         self.gold       = 0
         self.hp_regen   = 0.0
         self.mana_regen = 0.0
+
+        #KDA
+        self.kills   = 0
+        self.deaths  = 0
+        self.assists = 0
 
         #Inventory
         self.inventory = [None] * 6
@@ -177,6 +172,9 @@ class Player(EntityBase):
             "is_dead":      self.is_dead,
             "is_invisible": self.is_invisible,
             "bush_idx":     self.bush_idx,
+            "kills":        self.kills,
+            "deaths":       self.deaths,
+            "assists":      self.assists,
             "abilities":    [a.to_dict() if a else None for a in self.abilities],
             "inventory":    self.inventory[:],
         }
@@ -184,34 +182,34 @@ class Player(EntityBase):
         if self.stun_timer     > 0: d["stun_timer"]     = round(self.stun_timer,     2)
         if self.slow_timer     > 0: d["slow_timer"]     = round(self.slow_timer,     2)
         if self.root_timer     > 0: d["root_timer"]     = round(self.root_timer,     2)
-        if self.bleed_timer    > 0: d["bleed_timer"]    = round(self.bleed_timer,    2)
-        if self.revealed_timer > 0: d["revealed_timer"] = round(self.revealed_timer, 2)
+        if self.bleed_timer           > 0: d["bleed_timer"]           = round(self.bleed_timer,           2)
+        if self.revealed_timer        > 0: d["revealed_timer"]        = round(self.revealed_timer,        2)
+        if self.pull_timer            > 0: d["pull_timer"]            = round(self.pull_timer,            2)
+        if self.armor_reduction_timer > 0: d["armor_reduction_timer"] = round(self.armor_reduction_timer, 2)
         return d
 
 
 #-------------------------------------------------------------------------------------------------------------------Trap
 class Trap:
-    _s        = ENTITY_STATS['Trap']
-    ROOT_DUR  = _s['root_dur']
-    BLEED_DPS = _s['bleed_dps']
-    BLEED_DUR = _s['bleed_dur']
-    SIGHT_DUR = _s['sight_dur']
-    TRIGGER_R = _s['trigger_r']
-    SIZE      = _s['size']
-
-    def __init__(self, trap_id, owner_id, team, x, y):
-        self.id         = trap_id
-        self.owner_id   = owner_id
-        self.team       = team
-        self.x          = x
-        self.y          = y
-        self.size       = self.SIZE
-        self.is_expired = False
+    def __init__(self, trap_id, owner_id, team, x, y,
+                 root_dur, bleed_dps, bleed_dur, sight_dur, trigger_r, size):
+        self.id           = trap_id
+        self.owner_id     = owner_id
+        self.team         = team
+        self.x            = x
+        self.y            = y
+        self.size         = size
+        self.root_dur     = root_dur
+        self.bleed_dps    = bleed_dps
+        self.bleed_dur    = bleed_dur
+        self.sight_dur    = sight_dur
+        self.trigger_r    = trigger_r
+        self.is_expired   = False
 
     def update(self, dt, players):
         if self.is_expired:
             return
-        r2 = self.TRIGGER_R ** 2
+        r2 = self.trigger_r ** 2
         for p in players.values():
             if p.is_dead or p.team == self.team:
                 continue
@@ -222,10 +220,10 @@ class Trap:
                 return
 
     def _trigger(self, player):
-        player.root_timer     = self.ROOT_DUR
-        player.bleed_timer    = self.BLEED_DUR
-        player.bleed_dps      = self.BLEED_DPS
-        player.revealed_timer = self.SIGHT_DUR
+        player.root_timer     = self.root_dur
+        player.bleed_timer    = self.bleed_dur
+        player.bleed_dps      = self.bleed_dps
+        player.revealed_timer = self.sight_dur
         self.is_expired       = True
 
     def to_dict(self):
@@ -235,25 +233,22 @@ class Trap:
             "team":     self.team,
             "x":        self.x,
             "y":        self.y,
-            "size":     self.SIZE,
+            "size":     self.size,
         }
 
 
 #-------------------------------------------------------------------------------------------------------------------BurningArea
 class BurningArea:
-    _s            = ENTITY_STATS['BurningArea']
-    SIZE          = _s['size']
-    DURATION      = _s['duration']
-    TICK_DAMAGE   = _s['tick_damage']
-    TICK_INTERVAL = _s['tick_interval']
-
-    def __init__(self, area_id, x, y, owner_team, tick_damage=None):
+    def __init__(self, area_id, x, y, owner_team, tick_damage=20,
+                 size=64, duration=4.0, tick_interval=0.5):
         self.id           = area_id
         self.x            = x
         self.y            = y
         self.owner_team   = owner_team
-        self.tick_damage  = tick_damage if tick_damage is not None else self.TICK_DAMAGE
-        self.duration     = self.DURATION
+        self.tick_damage  = tick_damage
+        self.size         = size
+        self.duration     = duration
+        self.tick_interval = tick_interval
         self.tick_timer   = 0.0
         self.is_expired   = False
 
@@ -263,13 +258,13 @@ class BurningArea:
             self.is_expired = True
             return
         self.tick_timer += dt
-        if self.tick_timer >= self.TICK_INTERVAL:
+        if self.tick_timer >= self.tick_interval:
             self.tick_timer = 0.0
             self._tick_damage(players, player_turrets)
 
     def _tick_damage(self, players, player_turrets):
         from server.projectiles import apply_damage  # avoids circular import
-        half = self.SIZE // 2
+        half = self.size // 2
         for p in players.values():
             if p.is_dead or p.team == self.owner_team:
                 continue
@@ -286,7 +281,7 @@ class BurningArea:
             "id":         self.id,
             "x":          self.x,
             "y":          self.y,
-            "size":       self.SIZE,
+            "size":       self.size,
             "duration":   round(self.duration, 2),
             "owner_team": self.owner_team,
         }

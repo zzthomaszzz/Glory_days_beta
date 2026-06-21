@@ -10,7 +10,7 @@ from server.systems.effects import update_effects
 from server.systems.status import tick_player_status
 from server.systems.rune import update_rune
 from server.systems.shop import handle_purchase, handle_sell
-from shared.map_data import CAPTURE_ZONES
+from shared.map_data import CAPTURE_ZONES, TOWER_POSITIONS
 
 SPAWN_POSITIONS = {
     1: (60.0, 60.0),
@@ -40,7 +40,8 @@ class GameState:
             0: BuildingHeadquarter(1, 32, 32),
             1: BuildingHeadquarter(2, 1200, 720),
         }
-        self.match_time = 0.0
+        self.match_time          = 0.0
+        self._tower_armor_halved = False
 
         # Lobby phase
         self.game_phase      = "waiting"   # "waiting" | "countdown" | "live"
@@ -52,15 +53,18 @@ class GameState:
             bid = i + 2
             self.buildings[bid] = CapturePoint(bid, x, y)
 
-        # Towers — placed in front of each HQ, guard access to the base
-        t1_bid = len(CAPTURE_ZONES) + 2
-        t2_bid = len(CAPTURE_ZONES) + 3
-        tower1 = Tower(t1_bid, 1, 190, 190)
-        tower2 = Tower(t2_bid, 2, 1040, 560)
-        self.buildings[t1_bid] = tower1
-        self.buildings[t2_bid] = tower2
-        self.buildings[0].shield_tower = tower1
-        self.buildings[1].shield_tower = tower2
+        # Towers — positions defined in shared/map_data.py
+        # First tower per team becomes the shield tower (keeps that HQ invulnerable)
+        t_bid_start = len(CAPTURE_ZONES) + 2
+        shield_towers = {}
+        for i, (team, x, y) in enumerate(TOWER_POSITIONS):
+            bid = t_bid_start + i
+            tower = Tower(bid, team, x, y)
+            self.buildings[bid] = tower
+            if team not in shield_towers:
+                shield_towers[team] = tower
+        self.buildings[0].shield_tower = shield_towers.get(1)
+        self.buildings[1].shield_tower = shield_towers.get(2)
 
         self.shops = {
             0: ShopBuilding(0, 80,  700),
@@ -86,6 +90,55 @@ class GameState:
     def remove_player(self, player_id):
         self.players.pop(player_id, None)
         self.ready_players.discard(player_id)
+        if not self.players:
+            self._reset_match()
+
+    def _reset_match(self):
+        self.winner               = None
+        self.match_time           = 0.0
+        self._tower_armor_halved  = False
+        self.game_phase           = "waiting"
+        self.ready_players    = set()
+        self.countdown_timer  = 3.0
+        self.wait_timer       = 0.0
+
+        self.projectiles          = {}
+        self._proj_counter        = [0]
+        self.player_turrets       = {}
+        self._turret_counter      = [0]
+        self.banners              = {}
+        self._banner_counter      = [0]
+        self.fireball_projectiles = {}
+        self.burning_areas        = {}
+        self._ba_counter          = [0]
+        self.traps                = {}
+        self._trap_counter        = [0]
+        self.bolt_projectiles     = {}
+        self.hook_projectiles     = {}
+
+        self.buildings = {
+            0: BuildingHeadquarter(1, 32, 32),
+            1: BuildingHeadquarter(2, 1200, 720),
+        }
+        for i, (x, y) in enumerate(CAPTURE_ZONES):
+            self.buildings[i + 2] = CapturePoint(i + 2, x, y)
+        t_bid_start  = len(CAPTURE_ZONES) + 2
+        shield_towers = {}
+        for i, (team, x, y) in enumerate(TOWER_POSITIONS):
+            bid   = t_bid_start + i
+            tower = Tower(bid, team, x, y)
+            self.buildings[bid] = tower
+            if team not in shield_towers:
+                shield_towers[team] = tower
+        self.buildings[0].shield_tower = shield_towers.get(1)
+        self.buildings[1].shield_tower = shield_towers.get(2)
+
+        self.rune = {
+            "state":         "inactive",
+            "capture_timer": 0.0,
+            "respawn_timer": 0.0,
+            "capturer_team": None,
+        }
 
     def apply_input(self, player_id, msg):
         player = self.players.get(player_id)
@@ -181,6 +234,12 @@ class GameState:
         apply_pull(self.players, dt)
         minerals_done = self._minerals_exhausted()
         self._handle_respawns(dt, minerals_done)
+
+        if minerals_done and self.game_phase == "live" and not self._tower_armor_halved:
+            for b in self.buildings.values():
+                if isinstance(b, Tower) and not b.is_destroyed:
+                    b.armor = b.armor // 2
+            self._tower_armor_halved = True
 
         # Live-only: gold income, capture logic, win condition
         if self.game_phase == "live":

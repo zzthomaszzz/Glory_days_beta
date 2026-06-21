@@ -52,29 +52,38 @@ class Projectile:
 
 
 class FireballProjectile:
-    SPEED = 350
-
-    def __init__(self, proj_id, owner_team, x, y, target_x, target_y, tick_damage=20):
-        self.proj_id     = proj_id
-        self.owner_team  = owner_team
-        self.x           = float(x)
-        self.y           = float(y)
-        self.target_x    = float(target_x)
-        self.target_y    = float(target_y)
-        self.tick_damage = tick_damage
-        self.is_done     = False
+    def __init__(self, proj_id, owner_team, x, y, target_x, target_y,
+                 tick_damage=20, ba_size=64, ba_duration=4.0, ba_tick_interval=0.5, speed=350):
+        self.proj_id          = proj_id
+        self.owner_team       = owner_team
+        self.x                = float(x)
+        self.y                = float(y)
+        self.target_x         = float(target_x)
+        self.target_y         = float(target_y)
+        self.tick_damage      = tick_damage
+        self.ba_size          = ba_size
+        self.ba_duration      = ba_duration
+        self.ba_tick_interval = ba_tick_interval
+        self.speed            = speed
+        self.is_done          = False
 
     def update(self, dt, burning_areas, ba_counter):
         dx   = self.target_x - self.x
         dy   = self.target_y - self.y
         dist = math.sqrt(dx*dx + dy*dy)
-        step = self.SPEED * dt
+        step = self.speed * dt
         if dist <= step:
             self.is_done = True
             from server.entities import BurningArea  # avoids circular import
             ba_id = ba_counter[0]
             ba_counter[0] += 1
-            burning_areas[ba_id] = BurningArea(ba_id, self.target_x, self.target_y, self.owner_team, self.tick_damage)
+            burning_areas[ba_id] = BurningArea(
+                ba_id, self.target_x, self.target_y, self.owner_team,
+                tick_damage=self.tick_damage,
+                size=self.ba_size,
+                duration=self.ba_duration,
+                tick_interval=self.ba_tick_interval,
+            )
         else:
             self.x += (dx / dist) * step
             self.y += (dy / dist) * step
@@ -254,4 +263,6 @@ def apply_damage(target, raw_damage, armor, killer=None):
             target.is_dead = True
             target.respawn_timer = RESPAWN_TIME
             if killer is not None and getattr(killer, "team", None) != getattr(target, "team", None):
-                killer.gold += KILL_GOLD
+                killer.gold  += KILL_GOLD
+                killer.kills += 1
+                target.deaths += 1

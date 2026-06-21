@@ -80,3 +80,12 @@ BASE_POSITIONS = [
     (48, 48),    # team 0
     (1232, 752), # team 1
 ]
+
+# (team, x, y) for each map Tower — top-left corner, size 32x32
+# First entry per team becomes the shield tower (keeps that team's HQ invulnerable)
+TOWER_POSITIONS = [
+    # Team 1 — top-left base, HQ at (32, 32)
+    (1, 160,  64),   # forward guard  [shield tower]
+    # Team 2 — bottom-right base, HQ at (1200, 720)
+    (2, 1088, 688),  # forward guard  [shield tower]
+]
