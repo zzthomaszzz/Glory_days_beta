@@ -28,15 +28,16 @@ jobs:
       - name: Download butler
         shell: pwsh
         run: |
-          curl.exe -L -o butler.zip "https://broth.itch.zone/butler/windows-amd64/LATEST/archive/default"
-          Expand-Archive -Path butler.zip -DestinationPath butler -Force
+          New-Item -ItemType Directory -Force -Path _butler_dl | Out-Null
+          curl.exe -L -o _butler_dl\butler.zip "https://broth.itch.zone/butler/windows-amd64/LATEST/archive/default"
+          Expand-Archive -Path _butler_dl\butler.zip -DestinationPath butler -Force
 
       - name: Push to itch.io
         shell: pwsh
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          $zip = Get-ChildItem -Filter "*.zip" | Select-Object -First 1
+          $zip = Get-ChildItem -Filter "GloryDay_*.zip" | Select-Object -First 1
           $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ github.event.inputs.tag }}" } else { "${{ github.ref_name }}" }
           $version = $tag.TrimStart('v')
           .\butler\butler.exe push $zip.Name thomasng/glory-days:windows --userversion $version
