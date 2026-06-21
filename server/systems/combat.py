@@ -4,6 +4,7 @@ from server.abilities import Stealth
 from server.projectiles import Projectile, apply_damage, apply_on_hit_effects, _notify_auto_hit
 
 _TURRET_REVEAL_DUR = 0.5   # seconds an invisible enemy stays revealed while in turret range
+_BUSH_REVEAL_DUR   = 1.5   # seconds a player is revealed after attacking from a bush
 
 
 def resolve_combat(players, buildings, player_turrets, banners, dt, projectiles, proj_counter, traps=None):
@@ -121,6 +122,8 @@ def _tick_attack(player, players, buildings, player_turrets, banners, dt, projec
         damage = int(damage * (stealth_ab.bonus_mult if stealth_ab else 1.5))
         player._stealth_bonus_ready = False
     _break_stealth(player)
+    if player.bush_idx != -1:
+        player.revealed_timer = max(player.revealed_timer, _BUSH_REVEAL_DUR)
 
     if player.is_ranged:
         # Ranged: projectile fires immediately; tracking makes it committed

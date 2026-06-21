@@ -11,12 +11,9 @@ from server.systems.status import tick_player_status
 from server.systems.rune import update_rune
 from server.projectiles import _ASSIST_WINDOW
 from server.systems.shop import handle_purchase, handle_sell
-from shared.map_data import CAPTURE_ZONES, TOWER_POSITIONS
+from shared.map_data import CAPTURE_ZONES, TOWER_POSITIONS, HQ_POSITIONS, SHOP_POSITIONS, SPAWN_POSITIONS as _MAP_SPAWN
 
-SPAWN_POSITIONS = {
-    1: (60.0,   100.0),   # below Team 1 HQ (HQ bottom edge y=80, player clears at y=100)
-    2: (1220.0, 700.0),   # above Team 2 HQ (HQ top edge y=720, player clears at y=700)
-}
+SPAWN_POSITIONS = {team: (float(x), float(y)) for team, x, y in _MAP_SPAWN}
 
 
 class GameState:
@@ -38,8 +35,8 @@ class GameState:
         self.bolt_projectiles      = {}
         self.hook_projectiles      = {}
         self.buildings = {
-            0: BuildingHeadquarter(1, 32, 32),
-            1: BuildingHeadquarter(2, 1200, 720),
+            i: BuildingHeadquarter(team, x, y)
+            for i, (team, x, y) in enumerate(HQ_POSITIONS)
         }
         self.match_time          = 0.0
         self._tower_armor_halved = False
@@ -64,12 +61,12 @@ class GameState:
             self.buildings[bid] = tower
             if team not in shield_towers:
                 shield_towers[team] = tower
-        self.buildings[0].shield_tower = shield_towers.get(1)
-        self.buildings[1].shield_tower = shield_towers.get(2)
+        for i, (team, x, y) in enumerate(HQ_POSITIONS):
+            self.buildings[i].shield_tower = shield_towers.get(team)
 
         self.shops = {
-            0: ShopBuilding(0, 80,  700),
-            1: ShopBuilding(1, 1150, 60),
+            i: ShopBuilding(team, x, y)
+            for i, (team, x, y) in enumerate(SHOP_POSITIONS)
         }
 
         self.rune = {
@@ -118,8 +115,8 @@ class GameState:
         self.hook_projectiles     = {}
 
         self.buildings = {
-            0: BuildingHeadquarter(1, 32, 32),
-            1: BuildingHeadquarter(2, 1200, 720),
+            i: BuildingHeadquarter(team, x, y)
+            for i, (team, x, y) in enumerate(HQ_POSITIONS)
         }
         for i, (x, y) in enumerate(CAPTURE_ZONES):
             self.buildings[i + 2] = CapturePoint(i + 2, x, y)
@@ -131,8 +128,8 @@ class GameState:
             self.buildings[bid] = tower
             if team not in shield_towers:
                 shield_towers[team] = tower
-        self.buildings[0].shield_tower = shield_towers.get(1)
-        self.buildings[1].shield_tower = shield_towers.get(2)
+        for i, (team, x, y) in enumerate(HQ_POSITIONS):
+            self.buildings[i].shield_tower = shield_towers.get(team)
 
         self.rune = {
             "state":         "inactive",

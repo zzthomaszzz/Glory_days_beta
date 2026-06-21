@@ -613,7 +613,7 @@ class SceneTest(SceneBase):
         self._clamped_placement_pos = None
 
         # World sprites (pre-scaled to actual in-game sizes)
-        self._turret_img  = self._load_asset("turret.png",       (20, 20))
+        self._turret_img  = self._load_asset("turret.png",       (32, 32))
         self._capture_img = self._load_asset("capture_point.png", (32, 32))
         self._hq_imgs     = {
             1: self._load_asset("hq_t1.png", (48, 48)),
@@ -1184,10 +1184,6 @@ class SceneTest(SceneBase):
             hq_img = self._hq_imgs.get(b.get("team")) if btype == "BuildingHeadquarter" else None
             if hq_img:
                 screen.blit(hq_img, (sx, sy))
-            else:
-                depleted = b.get("mineral_pool", 1) == 0
-                col = (80, 80, 80) if depleted else TEAM_COLOURS.get(b["team"], (180, 180, 180))
-                pygame.draw.rect(screen, col, (sx, sy, bs, bs))
             if b.get("is_invulnerable"):
                 pygame.draw.rect(screen, (255, 220, 60), (sx - 3, sy - 3, bs + 6, bs + 6), 2)
             if b["hp"] < b["max_hp"]:
@@ -1395,13 +1391,6 @@ class SceneTest(SceneBase):
             if t.get("hp", t.get("max_hp", 1)) < t.get("max_hp", 1):
                 self._draw_hp_bar(screen, tsx, tsy - 6, sz, t.get("hp", 0), t.get("max_hp", 1))
 
-        for shop in self.client.shops.values():
-            sx, sy = self._w2s(shop["x"], shop["y"])
-            sz = shop["size"]
-            pygame.draw.rect(screen, (140, 105, 20), (sx, sy, sz, sz))
-            pygame.draw.rect(screen, (220, 180, 50), (sx, sy, sz, sz), 2)
-            lbl = self._font_label.render("$", True, (255, 230, 80))
-            screen.blit(lbl, lbl.get_rect(center=(sx + sz // 2, sy + sz // 2)))
 
         # ── Projectile trails pass — draw all trails to trail_surf first ────────
         self._trail_surf.fill((0, 0, 0, 0))

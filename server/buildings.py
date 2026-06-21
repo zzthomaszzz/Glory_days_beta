@@ -27,7 +27,7 @@ BUILDING_STATS = {
         attack_speed=0.5, proj_speed=300,
     ),
     'PlayerTurret': dict(
-        size=20, vision=150,
+        size=32, vision=150,
     ),
     'Banner': dict(
         size=20, vision=130,

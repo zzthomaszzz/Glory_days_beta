@@ -3,7 +3,7 @@ import math
 import pygame
 
 from shared.constants import MAP_W, MAP_H
-from shared.map_data import OBSTACLES
+from shared.map_data import OBSTACLES, WATER_ZONES
 
 _HALF        = 16   # player is 32x32, center-based position
 _SKIP_BLDG   = {'Banner', 'CapturePoint'}   # pass-through: Banner (temp flag), CapturePoint (must stand on to capture)
@@ -47,7 +47,8 @@ def apply_movement(players, dt, collidables=None):
             continue
         nx = player.dx / length
         ny = player.dy / length
-        step = player.speed * player.slow_factor * dt
+        water_slow = 0.5 if any(z.collidepoint(player.x, player.y) for z in WATER_ZONES) else 1.0
+        step = player.speed * player.slow_factor * water_slow * dt
 
         player.x += nx * step
         player.x = max(_HALF, min(player.x, MAP_W - _HALF))

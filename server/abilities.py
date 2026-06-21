@@ -686,7 +686,7 @@ class PlaceTurret(AbilityBase):
     def activate(self, player, targets, target_pos=None, game_state=None):
         from server.buildings import PlayerTurret  # avoids circular import
         tx, ty = target_pos
-        half = 10  # PlayerTurret size is 20 — store top-left so collision matches visual
+        half = 16  # PlayerTurret size is 32 — store top-left so collision matches visual
         tid = game_state._turret_counter[0]
         game_state._turret_counter[0] += 1
         game_state.player_turrets[tid] = PlayerTurret(

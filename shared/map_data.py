@@ -2,77 +2,120 @@
 import pygame
 
 OBSTACLES = [
-    pygame.Rect(224, 288, 63, 63),
-    pygame.Rect(128, 352, 63, 63),
-    pygame.Rect(256, 704, 31, 31),
-    pygame.Rect(256, 576, 63, 63),
-    pygame.Rect(896, 0, 31, 63),
-    pygame.Rect(352, 192, 63, 63),
-    pygame.Rect(512, 160, 95, 63),
-    pygame.Rect(32, 256, 127, 31),
-    pygame.Rect(32, 288, 31, 63),
-    pygame.Rect(256, 448, 31, 127),
-    pygame.Rect(288, 96, 63, 63),
-    pygame.Rect(384, 320, 31, 63),
-    pygame.Rect(288, 640, 127, 31),
-    pygame.Rect(384, 544, 63, 31),
-    pygame.Rect(320, 736, 95, 63),
-    pygame.Rect(480, 256, 95, 63),   # extended +1 tile right  (15,8) 3×2
-    pygame.Rect(512, 384, 31, 31),
-    pygame.Rect(576, 320, 63, 31),
-    pygame.Rect(512, 480, 63, 63),
-    pygame.Rect(480, 672, 127, 31),
-    pygame.Rect(512, 704, 31, 31),
-    pygame.Rect(608, 608, 127, 31),
-    pygame.Rect(672, 480, 31, 63),   # extended +2 tiles up    (21,13) 1×3
-    pygame.Rect(768, 512, 127, 95),
-    pygame.Rect(928, 576, 159, 63),  # extended +3 tiles right (29,18) 5×2
-    pygame.Rect(1152, 448, 31, 63),
-    pygame.Rect(832, 416, 31, 63),
-    pygame.Rect(1024, 416, 63, 31),
-    pygame.Rect(896, 320, 95, 63),
-    pygame.Rect(1024, 352, 31, 63),
-    pygame.Rect(704, 352, 31, 63),
-    pygame.Rect(832, 288, 31, 31),
-    pygame.Rect(768, 192, 31, 31),
-    pygame.Rect(1024, 224, 63, 63),  # original right-side wall (32,7) 2×2
-    pygame.Rect(928,  224, 63, 31),  # new: right flank choke  (29,7) 2×1
-    pygame.Rect(608, 64, 95, 63),
-    pygame.Rect(768, 64, 95, 63),
-    pygame.Rect(1024, 96, 63, 63),
-    pygame.Rect(1120, 640, 95, 31),  # new: bottom-right lower (35,20) 3×1
-    pygame.Rect(864,  672, 63, 63),  # new: bottom-right fill  (27,21) 2×2
-    pygame.Rect(160,  512, 63, 31),  # new: left flank wall    ( 5,16) 2×1
+    pygame.Rect(256, 96, 32, 32),
+    pygame.Rect(96, 288, 32, 32),
+    pygame.Rect(128, 352, 64, 32),
+    pygame.Rect(352, 192, 96, 32),
+    pygame.Rect(480, 160, 96, 32),
+    pygame.Rect(416, 224, 32, 64),
+    pygame.Rect(448, 256, 32, 32),
+    pygame.Rect(288, 448, 64, 32),
+    pygame.Rect(672, 160, 64, 64),
+    pygame.Rect(704, 320, 64, 32),
+    pygame.Rect(736, 352, 32, 64),
+    pygame.Rect(480, 352, 32, 32),
+    pygame.Rect(544, 256, 32, 64),
+    pygame.Rect(576, 256, 64, 32),
+    pygame.Rect(608, 448, 32, 32),
+    pygame.Rect(448, 544, 128, 32),
+    pygame.Rect(608, 576, 64, 32),
+    pygame.Rect(704, 512, 32, 64),
+    pygame.Rect(704, 0, 64, 64),
+    pygame.Rect(736, 64, 32, 32),
+    pygame.Rect(448, 32, 96, 32),
+    pygame.Rect(512, 64, 32, 64),
+    pygame.Rect(192, 192, 64, 64),
+    pygame.Rect(928, 544, 64, 32),
+    pygame.Rect(832, 224, 64, 64),
+    pygame.Rect(832, 416, 32, 64),
+    pygame.Rect(992, 256, 96, 32),
+    pygame.Rect(1056, 288, 32, 64),
+    pygame.Rect(1024, 448, 64, 64),
+    pygame.Rect(960, 672, 64, 32),
+    pygame.Rect(1024, 640, 32, 32),
+    pygame.Rect(1024, 160, 32, 64),
+    pygame.Rect(864, 32, 96, 32),
+    pygame.Rect(800, 96, 32, 64),
+    pygame.Rect(1024, 64, 32, 32),
+    pygame.Rect(352, 0, 32, 160),
+    pygame.Rect(352, 640, 32, 64),
+    pygame.Rect(576, 608, 32, 64),
+    pygame.Rect(384, 736, 160, 32),
+    pygame.Rect(32, 608, 64, 32),
+    pygame.Rect(160, 640, 32, 64),
+    pygame.Rect(1088, 96, 32, 32),
+    pygame.Rect(1120, 160, 128, 32),
+    pygame.Rect(1120, 384, 64, 32),
+    pygame.Rect(1216, 416, 64, 32),
+    pygame.Rect(0, 384, 64, 32),
+    pygame.Rect(160, 448, 64, 64),
+    pygame.Rect(672, 672, 96, 32),
+    pygame.Rect(704, 480, 64, 32),
+    pygame.Rect(928, 736, 32, 32),
+    pygame.Rect(928, 672, 32, 32),
+    pygame.Rect(896, 544, 32, 96),
+    pygame.Rect(800, 640, 32, 128),
+    pygame.Rect(800, 512, 32, 64),
+    pygame.Rect(512, 416, 32, 64),
+    pygame.Rect(448, 448, 32, 32),
 ]
 
 # (x, y) top-left of each 32x32 capture point tile
 CAPTURE_ZONES = [
-    (608, 384),   # dead centre        (19,12)
-    (576,  32),   # top-centre         (18, 1)
-    (608, 736),   # bottom-centre      (19,23)
-    (224, 512),   # bottom-left flank  ( 7,16)
-    (992, 256),   # top-right flank    (31, 8)
-    ( 64, 288),   # top-left base area ( 2, 9)
-    (1056, 384),  # right-side mid     (33,12)
+    (320, 320),
+    (608, 352),
+    (480, 64),
+    (928, 576),
+    (960, 352),
+    (896, 96),
+    (448, 704),
+    (96, 480),
+    (1184, 256),
 ]
 
 BUSHES = [
-    pygame.Rect( 96, 160, 31, 31),   # top-left area         ( 3, 5)
-    pygame.Rect(448, 192, 31, 31),   # top mid-left          (14, 6)
-    pygame.Rect(992, 160, 31, 31),   # top mid-right         (31, 5)
-    pygame.Rect(544, 384, 31, 31),   # centre west of cap    (17,12)
-    pygame.Rect(640, 480, 31, 31),   # centre east           (20,15)
-    pygame.Rect(352, 448, 31, 31),   # centre west           (11,14)
-    pygame.Rect(128, 544, 31, 31),   # left corridor         ( 4,17)
-    pygame.Rect(448, 576, 31, 31),   # bottom mid-left       (14,18)
-    pygame.Rect(800, 608, 31, 31),   # bottom mid-right      (25,19)
-    pygame.Rect(1088, 512, 31, 31),  # right corridor        (34,16)
+    pygame.Rect(160, 384, 64, 32),
+    pygame.Rect(192, 352, 32, 32),
+    pygame.Rect(256, 416, 64, 32),
+    pygame.Rect(256, 448, 32, 32),
+    pygame.Rect(384, 256, 32, 64),
+    pygame.Rect(640, 448, 32, 32),
+    pygame.Rect(640, 192, 32, 64),
+    pygame.Rect(672, 224, 64, 32),
+    pygame.Rect(608, 480, 64, 32),
+    pygame.Rect(416, 288, 32, 32),
+    pygame.Rect(416, 160, 64, 32),
+    pygame.Rect(448, 192, 64, 32),
+    pygame.Rect(480, 384, 64, 32),
+    pygame.Rect(832, 384, 64, 32),
+    pygame.Rect(864, 416, 32, 32),
+    pygame.Rect(992, 416, 32, 64),
+    pygame.Rect(1024, 416, 32, 32),
+    pygame.Rect(704, 352, 32, 64),
+    pygame.Rect(864, 192, 160, 32),
+    pygame.Rect(1024, 96, 64, 64),
+    pygame.Rect(448, 576, 32, 64),
+    pygame.Rect(352, 608, 96, 32),
+    pygame.Rect(320, 704, 64, 64),
+    pygame.Rect(1184, 384, 64, 32),
+    pygame.Rect(0, 416, 64, 32),
+    pygame.Rect(160, 512, 32, 64),
+    pygame.Rect(768, 672, 32, 64),
+    pygame.Rect(960, 768, 32, 32),
+    pygame.Rect(608, 608, 32, 32),
+    pygame.Rect(832, 512, 96, 32),
+    pygame.Rect(320, 480, 64, 32),
+    pygame.Rect(480, 416, 32, 64),
 ]
 
-SPAWN_ZONES = [
-    pygame.Rect(0, 0, 96, 96),       # team 0 (top-left)
-    pygame.Rect(1184, 704, 96, 96),  # team 1 (bottom-right)
+# (team, x, y) — centre of each team's spawn point
+SPAWN_POSITIONS = [
+    (1, 224, 48),
+    (2, 1040, 752),
 ]
+
+# Derived rects for MapSystem fog-of-war node marking
+SPAWN_ZONES = [pygame.Rect(x - 48, y - 48, 96, 96) for _, x, y in SPAWN_POSITIONS]
 
 
 #Centre of each team's main base, aligned to spawn zones
@@ -84,8 +127,30 @@ BASE_POSITIONS = [
 # (team, x, y) for each map Tower — top-left corner, size 32x32
 # First entry per team becomes the shield tower (keeps that team's HQ invulnerable)
 TOWER_POSITIONS = [
-    # Team 1 — top-left base, HQ at (32, 32)
-    (1, 160,  64),   # forward guard  [shield tower]
-    # Team 2 — bottom-right base, HQ at (1200, 720)
-    (2, 1088, 688),  # forward guard  [shield tower]
+    (2, 1184, 672),
+    (1, 64, 96),
+]
+
+# (team, x, y) — top-left corner of each HQ, size 48×48
+HQ_POSITIONS = [
+    (2, 1208, 728),
+    (1, 24, 24),
+]
+
+# Water zones — players inside move at 50% speed
+WATER_ZONES = [
+    pygame.Rect(448, 288, 64, 64),
+    pygame.Rect(608, 512, 96, 64),
+    pygame.Rect(576, 160, 96, 32),
+    pygame.Rect(640, 128, 96, 32),
+    pygame.Rect(768, 384, 64, 64),
+    pygame.Rect(896, 224, 128, 32),
+    pygame.Rect(352, 544, 96, 64),
+    pygame.Rect(800, 768, 160, 32),
+]
+
+# (team, x, y) — top-left corner of each shop building, size 32×32
+SHOP_POSITIONS = [
+    (1, 64, 704),
+    (1, 1184, 64),
 ]

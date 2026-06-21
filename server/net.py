@@ -129,7 +129,8 @@ class GameServer:
             now = loop.time()
             dt  = now - last_tick
             last_tick = now
-            self.game_state.match_time += dt
+            if self.game_state.game_phase == "live":
+                self.game_state.match_time += dt
             self.game_state.update(dt)
 
             snapshot = make_snapshot(
