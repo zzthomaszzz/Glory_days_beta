@@ -10,7 +10,7 @@ on:
         required: true
 
 jobs:
-  deploy:
+  deploy-itch:
     runs-on: windows-latest
 
     steps:
@@ -41,3 +41,17 @@ jobs:
           $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ github.event.inputs.tag }}" } else { "${{ github.ref_name }}" }
           $version = $tag.TrimStart('v')
           .\butler\butler.exe push $zip.Name thomasng/glory-days:windows --userversion $version
+
+  deploy-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy server to DigitalOcean
+        env:
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DO_SSH_KEY" > ~/.ssh/do_key
+          chmod 600 ~/.ssh/do_key
+          ssh -i ~/.ssh/do_key -o StrictHostKeyChecking=no root@$DO_HOST \
+            "cd ~/gloryday && git pull && systemctl restart gloryday"
