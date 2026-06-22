@@ -17,7 +17,7 @@ MAP_H = 800
 #Combat
 RESPAWN_TIME  = 9.0
 KILL_GOLD     = 25
-ATTACK_WINDUP = 0.25
+ATTACK_WINDUP = 0.25   # fallback windup duration — heroes override via attack_windup in heroes.py
 
 #Attrition rune
 RUNE_X            = 640

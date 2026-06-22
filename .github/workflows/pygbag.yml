@@ -1,0 +1,38 @@
+name: Build and deploy HTML5 to itch.io
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pygbag
+
+      - name: Build with pygbag
+        run: pygbag --build main.py
+
+      - name: Download butler
+        run: |
+          curl -L -o butler.zip "https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default"
+          unzip butler.zip
+          chmod +x butler
+
+      - name: Deploy to itch.io (html5)
+        if: success()
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          ./butler push build/web \
+            ${{ secrets.ITCH_USERNAME }}/${{ secrets.ITCH_GAME }}:html5

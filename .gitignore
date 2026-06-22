@@ -5,6 +5,7 @@ __pycache__/
 venv/
 env/
 build/
+dist/
 *.spec
 .idea/
 .DS_Store

@@ -15,6 +15,11 @@ from shared.map_data import CAPTURE_ZONES, TOWER_POSITIONS, HQ_POSITIONS, SHOP_P
 
 SPAWN_POSITIONS = {team: (float(x), float(y)) for team, x, y in _MAP_SPAWN}
 
+DUMMY_ID = 9999
+_DUMMY_X  = 640.0
+_DUMMY_Y  = 400.0
+_DUMMY_HP = 5000
+
 
 class GameState:
     def __init__(self, solo_mode=False):
@@ -76,6 +81,17 @@ class GameState:
             "capturer_team":  None,
         }
 
+        if self.solo_mode:
+            self._add_dummy()
+
+    def _add_dummy(self):
+        dummy = Player(DUMMY_ID, 2, "Soldier")
+        dummy.x     = _DUMMY_X
+        dummy.y     = _DUMMY_Y
+        dummy.hp    = _DUMMY_HP
+        dummy.max_hp = _DUMMY_HP
+        self.players[DUMMY_ID] = dummy
+
     def add_player(self, player_id, team, hero_name="Soldier"):
         if hero_name not in HERO_REGISTRY:
             hero_name = 'Soldier'
@@ -88,7 +104,8 @@ class GameState:
     def remove_player(self, player_id):
         self.players.pop(player_id, None)
         self.ready_players.discard(player_id)
-        if not self.players:
+        real_players = [pid for pid in self.players if pid != DUMMY_ID]
+        if not real_players:
             self._reset_match()
 
     def _reset_match(self):
@@ -138,6 +155,11 @@ class GameState:
             "capturer_team": None,
         }
 
+        if DUMMY_ID in self.players:
+            self.players[DUMMY_ID].reset_full(_DUMMY_X, _DUMMY_Y)
+            self.players[DUMMY_ID].hp = _DUMMY_HP
+            self.players[DUMMY_ID].max_hp = _DUMMY_HP
+
     def apply_input(self, player_id, msg):
         player = self.players.get(player_id)
         if not player or player.is_dead:
@@ -149,7 +171,8 @@ class GameState:
                 if "target_type" in msg:
                     player.attack_target = (msg["target_type"], msg["target_id"])
                 elif player.dx != 0 or player.dy != 0:
-                    player.attack_target = None
+                    if not player.is_attacking and not (player.attack_target and player.attack_timer <= 0):
+                        player.attack_target = None
                 if "ability" in msg:
                     slot = msg["ability"]
                     ability = player.abilities[slot] if 0 <= slot < len(player.abilities) else None
@@ -175,7 +198,8 @@ class GameState:
         if self.game_phase != "waiting":
             return
         self.ready_players.add(player_id)
-        if self._both_teams_present() and all(pid in self.ready_players for pid in self.players):
+        real_ids = [pid for pid in self.players if pid != DUMMY_ID]
+        if self._both_teams_present() and all(pid in self.ready_players for pid in real_ids):
             self._start_countdown()
 
     def _handle_force_start(self):
@@ -183,9 +207,10 @@ class GameState:
             self._start_countdown()
 
     def _both_teams_present(self):
+        real = [p for p in self.players.values() if p.id != DUMMY_ID]
         if self.solo_mode:
-            return len(self.players) >= 1
-        teams = {p.team for p in self.players.values()}
+            return len(real) >= 1
+        teams = {p.team for p in real}
         return 1 in teams and 2 in teams
 
     def _start_countdown(self):
@@ -195,6 +220,11 @@ class GameState:
     def _go_live(self):
         self.game_phase = "live"
         for player in self.players.values():
+            if player.id == DUMMY_ID:
+                player.reset_full(_DUMMY_X, _DUMMY_Y)
+                player.hp = _DUMMY_HP
+                player.max_hp = _DUMMY_HP
+                continue
             spawn = SPAWN_POSITIONS.get(player.team, (60.0, 60.0))
             player.reset_full(*spawn)
 
@@ -295,6 +325,11 @@ class GameState:
         for player in self.players.values():
             if not player.is_dead:
                 continue
+            if player.id == DUMMY_ID:
+                player.reset_on_spawn(_DUMMY_X, _DUMMY_Y)
+                player.hp = _DUMMY_HP
+                player.max_hp = _DUMMY_HP
+                continue
             if no_respawn:
                 continue
             player.respawn_timer -= dt
@@ -320,7 +355,7 @@ class GameState:
         if minerals_done:
             for team in (1, 2):
                 enemy = 2 if team == 1 else 1
-                enemy_players = [p for p in self.players.values() if p.team == enemy]
+                enemy_players = [p for p in self.players.values() if p.team == enemy and p.id != DUMMY_ID]
                 if enemy_players and all(p.is_dead for p in enemy_players):
                     self.winner = team
                     self.game_phase = "ended"

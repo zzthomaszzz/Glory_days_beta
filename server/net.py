@@ -1,8 +1,10 @@
-# TCP server: connection handling, version check, broadcast loop, and game reset
+# WebSocket server: connection handling, version check, broadcast loop, and game reset
 
 import asyncio
 import json
-import socket
+
+import websockets
+import websockets.exceptions
 
 from server.game_state import GameState
 from shared.protocol import make_snapshot
@@ -16,44 +18,41 @@ class GameServer:
         self.snapshot_interval = snapshot_interval
         self.game_state = game_state
 
-        self.writers = {}
+        self.sockets = {}        # player_id -> websocket
         self.next_player_id = 0
         self._end_timer = None
 
     async def run(self):
-        server = await asyncio.start_server(self.handle_client, self.host, self.port)
-        print(f"GloryDay server running on {self.host}:{self.port}")
+        async with websockets.serve(self.handle_client, self.host, self.port):
+            print(f"GloryDay server running on ws://{self.host}:{self.port}")
+            await self.broadcast_loop()
 
-        await asyncio.gather(
-            server.serve_forever(),
-            self.broadcast_loop(),
-        )
-
-    async def handle_client(self, reader, writer):
-        sock = writer.get_extra_info('socket')
-        if sock:
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        peer = writer.get_extra_info('peername', ('?', 0))
-        print(f"[+] TCP connection from {peer[0]}:{peer[1]}")
+    async def handle_client(self, websocket):
+        try:
+            peer = websocket.remote_address
+        except Exception:
+            peer = ("?", 0)
+        print(f"[+] WS connection from {peer[0]}:{peer[1]}")
         player_id = self.next_player_id
         self.next_player_id += 1
         team = self._assign_team()
 
         try:
             hero_name = "Player"
-            loop     = asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
             deadline = loop.time() + 15.0
             while True:
                 remaining = max(0.1, deadline - loop.time())
-                hero_line = await asyncio.wait_for(reader.readline(), timeout=remaining)
-                if not hero_line:
-                    writer.close()
-                    return
-                stripped = hero_line.strip()
-                if not stripped:
-                    continue
                 try:
-                    hero_msg = json.loads(stripped.decode())
+                    raw = await asyncio.wait_for(websocket.recv(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    await websocket.close()
+                    return
+                if not raw:
+                    await websocket.close()
+                    return
+                try:
+                    hero_msg = json.loads(raw)
                     if hero_msg.get("type") == "status":
                         reply = {
                             "type":         "status_reply",
@@ -61,9 +60,8 @@ class GameServer:
                             "max_players":  6,
                             "game_phase":   self.game_state.game_phase,
                         }
-                        writer.write((json.dumps(reply) + "\n").encode())
-                        await writer.drain()
-                        writer.close()
+                        await websocket.send(json.dumps(reply))
+                        await websocket.close()
                         return
                     if hero_msg.get("type") != "hero_select":
                         break
@@ -71,29 +69,29 @@ class GameServer:
                         client_ver = hero_msg.get("version", "unknown")
                         print(f"[!] Player {player_id} rejected: version mismatch (client={client_ver}, server={GAME_VERSION})")
                         reply = {"type": "error", "msg": f"Version mismatch — server is v{GAME_VERSION} but your client is v{client_ver}. Download the latest version."}
-                        writer.write((json.dumps(reply) + "\n").encode())
-                        await writer.drain()
-                        writer.close()
+                        await websocket.send(json.dumps(reply))
+                        await websocket.close()
                         return
                     hero_name = hero_msg.get("hero", "Player")
                     break
                 except Exception:
                     continue
+        except websockets.exceptions.ConnectionClosed:
+            return
         except Exception as e:
             print(f"[!] Player {player_id} handshake failed: {e}")
-            writer.close()
+            await websocket.close()
             return
 
         if self.game_state.game_phase == "ended":
             print(f"[!] Player {player_id} rejected: server is resetting after game end")
             reply = {"type": "error", "msg": "Server is resetting after the last game. Try again in a moment."}
-            writer.write((json.dumps(reply) + "\n").encode())
-            await writer.drain()
-            writer.close()
+            await websocket.send(json.dumps(reply))
+            await websocket.close()
             return
 
         self.game_state.add_player(player_id, team, hero_name)
-        self.writers[player_id] = writer
+        self.sockets[player_id] = websocket
 
         welcome = {
             "type":      "welcome",
@@ -101,33 +99,33 @@ class GameServer:
             "team":      team,
             "shops":     {str(k): s.to_dict() for k, s in self.game_state.shops.items()},
         }
-        writer.write((json.dumps(welcome) + "\n").encode())
-        await writer.drain()
+        await websocket.send(json.dumps(welcome))
         print(f"Player {player_id} connected as {hero_name} (team {team})")
 
         try:
-            while True:
-                line = await reader.readline()
-                if not line:
-                    break
-                msg = json.loads(line.decode())
+            async for raw in websocket:
+                try:
+                    msg = json.loads(raw)
+                except Exception:
+                    continue
                 self.game_state.apply_input(player_id, msg)
 
+        except websockets.exceptions.ConnectionClosed:
+            pass
         except Exception as e:
             print(f"Player {player_id} error: {e}")
 
         finally:
             self.game_state.remove_player(player_id)
-            self.writers.pop(player_id, None)
-            writer.close()
+            self.sockets.pop(player_id, None)
             print(f"Player {player_id} disconnected")
 
     async def broadcast_loop(self):
-        loop     = asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
         last_tick = loop.time()
         while True:
             now = loop.time()
-            dt  = now - last_tick
+            dt = now - last_tick
             last_tick = now
             if self.game_state.game_phase == "live":
                 self.game_state.match_time += dt
@@ -154,20 +152,21 @@ class GameServer:
                 hook_projectiles=self.game_state.hook_projectiles,
                 winner=self.game_state.winner,
             )
-            data = (json.dumps(snapshot) + "\n").encode()
+            text = json.dumps(snapshot)
 
             stale = []
-            for pid, writer in list(self.writers.items()):
-                if writer.transport.get_write_buffer_size() > 65_536:
+            for pid, ws in list(self.sockets.items()):
+                if ws.closed:
                     stale.append(pid)
                     continue
                 try:
-                    writer.write(data)
+                    asyncio.create_task(ws.send(text))
                 except Exception:
                     stale.append(pid)
+
             for pid in stale:
-                print(f"[!] Player {pid} write buffer full — disconnecting")
-                self.writers.pop(pid, None).close()
+                print(f"[!] Player {pid} dropped — removing")
+                self.sockets.pop(pid, None)
 
             await asyncio.sleep(self.snapshot_interval)
 
@@ -178,7 +177,7 @@ class GameServer:
                     self._end_timer -= self.snapshot_interval
                     if self._end_timer <= 0:
                         await self._reset_game()
-            elif self.game_state.game_phase in ("live", "countdown") and not self.writers:
+            elif self.game_state.game_phase in ("live", "countdown") and not self.sockets:
                 print("[server] All players left — resetting lobby")
                 await self._reset_game()
 
@@ -190,13 +189,12 @@ class GameServer:
         return 1 if counts[1] <= counts[2] else 2
 
     async def _reset_game(self):
-        for writer in list(self.writers.values()):
+        for ws in list(self.sockets.values()):
             try:
-                writer.close()
-                await writer.wait_closed()
+                await ws.close()
             except Exception:
                 pass
-        self.writers.clear()
+        self.sockets.clear()
         self.game_state = GameState(solo_mode=self.game_state.solo_mode)
         self.next_player_id = 0
         self._end_timer = None

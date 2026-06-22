@@ -20,7 +20,7 @@ HERO_ABILITIES = {
     'Mage':    [Fireball, FatedMissile, Teleport, Recall],
     'Hunter':  [Charge, GroundSlam, Fortify, Recall],
     'Samurai': [Spin, Bushido, PlaceBanner, Recall],
-    'Rat':     [Stealth, PlaceTrap, Bolt, Recall],
+    'Archer':  [Stealth, PlaceTrap, Bolt, Recall],
     'Watcher': [Hook, IronStack, BattleCry, Recall],
     'Warden':  [Mend, ThrowingNets, EagleEye, Recall],
 }
@@ -58,6 +58,7 @@ class Player(EntityBase):
         self.ability_power = _s['ability_power']
         self.attack_range  = _s['attack_range']
         self.attack_speed  = _s['attack_speed']
+        self.attack_windup = _s.get('attack_windup', 0.25)
         self.attack_timer  = 0.0
         self.crit_chance   = _s['crit_chance']
 
@@ -105,9 +106,9 @@ class Player(EntityBase):
         self.attack_target       = None
         self.is_dead             = False
         self.respawn_timer       = 0.0
-        self.is_attacking        = False      # True during pre-fire melee windup (0.25 s commit)
+        self.is_attacking        = False      # True during attack windup (melee and ranged)
         self.attack_windup_timer = 0.0
-        self._pending_damage     = 0          # melee only: damage locked in at windup commit
+        self._pending_damage     = 0          # damage locked in at windup commit
         self.stun_timer          = 0.0
         self.slow_timer          = 0.0
         self.slow_factor         = 1.0
@@ -188,6 +189,11 @@ class Player(EntityBase):
             "abilities":    [a.to_dict() if a else None for a in self.abilities],
             "inventory":    self.inventory[:],
         }
+        if self.is_dead:         anim_state = "dead"
+        elif self.is_attacking:  anim_state = "attack"
+        elif self.dx or self.dy: anim_state = "running"
+        else:                    anim_state = "idle"
+        d["anim_state"] = anim_state
         if self.respawn_timer  > 0: d["respawn_timer"]  = round(self.respawn_timer,  2)
         if self.stun_timer     > 0: d["stun_timer"]     = round(self.stun_timer,     2)
         if self.slow_timer     > 0: d["slow_timer"]     = round(self.slow_timer,     2)

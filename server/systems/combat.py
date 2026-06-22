@@ -11,7 +11,7 @@ def resolve_combat(players, buildings, player_turrets, banners, dt, projectiles,
     for player in players.values():
         if player.is_dead:
             continue
-        _tick_windup(player, dt, players, buildings, player_turrets, banners, traps=traps)
+        _tick_windup(player, dt, players, buildings, player_turrets, banners, projectiles, proj_counter, traps=traps)
         _tick_attack(player, players, buildings, player_turrets, banners, dt, projectiles, proj_counter, traps=traps)
 
 
@@ -49,8 +49,8 @@ def resolve_turret_combat(player_turrets, players, dt, projectiles, proj_counter
 # Player attack helpers
 # ---------------------------------------------------------------------------
 
-def _tick_windup(player, dt, players, buildings, player_turrets, banners, traps=None):
-    """Pre-fire melee swing timer. Damage fires here when windup expires, not in _tick_attack."""
+def _tick_windup(player, dt, players, buildings, player_turrets, banners, projectiles, proj_counter, traps=None):
+    """Pre-fire swing timer for both melee and ranged. Shot/damage fires here when windup expires."""
     if not player.is_attacking:
         return
     if player.is_dead:
@@ -60,14 +60,17 @@ def _tick_windup(player, dt, players, buildings, player_turrets, banners, traps=
     player.attack_windup_timer -= dt
     if player.attack_windup_timer > 0:
         return
-    # Windup complete — fire committed melee hit (no range re-check)
     player.is_attacking = False
     player.attack_timer = 1.0 / player.attack_speed
     if not player.attack_target:
         return
     target_type, target_id = player.attack_target
     target = _get_target(target_type, target_id, players, buildings, player_turrets, banners, traps=traps)
-    if target and not _is_gone(target):
+    if not target or _is_gone(target):
+        return
+    if player.is_ranged:
+        _fire_projectile(player, target_type, int(target_id), target.armor, projectiles, proj_counter, player._pending_damage)
+    else:
         apply_damage(target, player._pending_damage, target.armor, killer=player)
         apply_on_hit_effects(player, target)
         _notify_auto_hit(target)
@@ -101,7 +104,7 @@ def _tick_attack(player, players, buildings, player_turrets, banners, dt, projec
         player.attack_target = None
         return
 
-    # Skip if already in a melee windup (damage will fire from _tick_windup)
+    # Skip if already in windup — shot/damage fires from _tick_windup
     if player.is_attacking:
         return
 
@@ -125,16 +128,10 @@ def _tick_attack(player, players, buildings, player_turrets, banners, dt, projec
     if player.bush_idx != -1:
         player.revealed_timer = max(player.revealed_timer, _BUSH_REVEAL_DUR)
 
-    if player.is_ranged:
-        # Ranged: projectile fires immediately; tracking makes it committed
-        player.attack_timer = 1.0 / player.attack_speed
-        _fire_projectile(player, target_type, int(target_id), target.armor, projectiles, proj_counter, damage)
-    else:
-        # Melee: commit to swing — damage fires after ATTACK_WINDUP in _tick_windup
-        player._pending_damage     = damage
-        player.is_attacking        = True
-        player.attack_windup_timer = ATTACK_WINDUP
-        # attack_timer stays at 0; _tick_windup resets it after damage fires
+    # Commit to windup — projectile/damage fires from _tick_windup
+    player._pending_damage     = damage
+    player.is_attacking        = True
+    player.attack_windup_timer = player.attack_windup
 
 
 def _fire_projectile(player, target_type, target_id, target_armor, projectiles, proj_counter, damage=None):

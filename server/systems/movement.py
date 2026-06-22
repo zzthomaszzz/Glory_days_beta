@@ -36,7 +36,11 @@ def _build_obs_list(collidables):
 def apply_movement(players, dt, collidables=None):
     obs_list = _build_obs_list(collidables)
     for player in players.values():
-        if player.is_dead or player.is_attacking:   # is_attacking = True during pre-fire melee windup
+        if player.is_dead:
+            continue
+        if player.is_attacking:   # locked during windup
+            continue
+        if player.attack_target and player.attack_timer <= 0:   # primed — don't let player step out of range
             continue
         if player.stun_timer > 0 or player.root_timer > 0:
             continue

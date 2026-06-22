@@ -9,6 +9,7 @@ from client.net import NetworkClient, ping_server
 from client.map_system import MapSystem
 from client.effects import EffectsSystem, target_is_gone
 from client.status_effects import StatusEffectRenderer
+from client.animations import AnimationController
 from client.hud import HudRenderer, TEAM_COLOURS, MINI_W, MINI_H, MINI_SX, MINI_SY, _build_item_icons
 from shared.constants import (
     CLIENT_INPUT_INTERVAL,
@@ -45,7 +46,7 @@ HERO_ASSET_MAP = {
     "Mage":    os.path.join(_ROOT, "asset", "mage.png"),
     "Hunter":  os.path.join(_ROOT, "asset", "hunter.png"),
     "Samurai": os.path.join(_ROOT, "asset", "samurai.png"),
-    "Rat":     os.path.join(_ROOT, "asset", "rat.png"),
+    "Archer":  os.path.join(_ROOT, "asset", "archer", "idle", "archer_idle1.png"),
     "Watcher": os.path.join(_ROOT, "asset", "watcher.png"),
     "Player":  os.path.join(_ROOT, "asset", "default_player.png"),
 }
@@ -654,6 +655,8 @@ class SceneTest(SceneBase):
         self._local_attack_target = None   # (target_type, target_id) — drives indicator ring
         self._hovered_target      = None   # (target_type, target_id) — enemy under cursor
         self._vfx_time            = 0.0    # monotonic clock for pulsing animations
+        self._dt                  = 0.0    # last frame delta, shared with render
+        self._anim_ctrl           = AnimationController()
 
         #Screen shake
         self._shake_timer     = 0.0
@@ -937,6 +940,7 @@ class SceneTest(SceneBase):
 
     def update(self, dt):
         super().update(dt)
+        self._dt = dt
 
         # Return to menu when server closes the connection
         if not self.client.is_connected:
@@ -1224,6 +1228,14 @@ class SceneTest(SceneBase):
                 continue
             p_data = snap.get("players", {}).get(pid, {})
             if p_data.get("is_dead"):
+                if p_data.get("team") != my_team and not self._is_visible(pos[0], pos[1], entity_id=pid):
+                    continue
+                dsx, dsy = self._w2s(pos[0], pos[1])
+                hero = p_data.get("hero", "Player")
+                death_frame = self._anim_ctrl.get_frame(pid, hero, "dead", self._dt)
+                if death_frame:
+                    diw, dih = death_frame.get_size()
+                    screen.blit(death_frame, (dsx - diw // 2, dsy + 16 - dih))
                 continue
             if p_data.get("team") != my_team and not self._is_visible(pos[0], pos[1], entity_id=pid):
                 continue
@@ -1334,25 +1346,36 @@ class SceneTest(SceneBase):
                                     pygame.Rect(sx - r, sy - r, r * 2, r * 2),
                                     math.pi / 2, math.pi / 2 + arc_angle, 3)
 
-            #Hero sprite — with stealth transparency and shimmer transition
-            hero = p_data.get("hero", "Player")
-            img  = self._get_hero_image(hero)
-            if img:
+            #Hero sprite — animated if available, static fallback otherwise
+            hero       = p_data.get("hero", "Player")
+            anim_state = p_data.get("anim_state", "idle")
+            frame      = self._anim_ctrl.get_frame(pid, hero, anim_state, self._dt)
+            if frame:
+                iw, ih   = frame.get_size()
+                draw_xy  = (sx - iw // 2, sy + 16 - ih)
+                spr      = frame
+                spr_size = (iw, ih)
+            else:
+                spr      = self._get_hero_image(hero)
+                draw_xy  = (sx - 16, sy - 16)
+                spr_size = (32, 32)
+
+            if spr:
                 shimmer_t = self._stealth_shimmer.get(pid, 0)
                 if shimmer_t > 0:
                     flicker = abs(math.sin(shimmer_t * 28))
-                    s_copy  = img.copy()
+                    s_copy  = spr.copy()
                     s_copy.set_alpha(int(55 + 200 * flicker))
-                    screen.blit(s_copy, (sx - 16, sy - 16))
-                    _shim = pygame.Surface((32, 32), pygame.SRCALPHA)
+                    screen.blit(s_copy, draw_xy)
+                    _shim = pygame.Surface(spr_size, pygame.SRCALPHA)
                     _shim.fill((180, 140, 255, int(100 * flicker)))
-                    screen.blit(_shim, (sx - 16, sy - 16))
+                    screen.blit(_shim, draw_xy)
                 elif is_invisible and not enemy:
-                    s_copy = img.copy()
+                    s_copy = spr.copy()
                     s_copy.set_alpha(80)
-                    screen.blit(s_copy, (sx - 16, sy - 16))
+                    screen.blit(s_copy, draw_xy)
                 else:
-                    screen.blit(img, (sx - 16, sy - 16))
+                    screen.blit(spr, draw_xy)
             else:
                 pygame.draw.circle(screen, TEAM_COLOURS.get(p_data.get("team"), (255, 255, 255)), (sx, sy), 8)
 
