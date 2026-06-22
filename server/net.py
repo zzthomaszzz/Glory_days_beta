@@ -5,9 +5,43 @@ import json
 
 import websockets
 import websockets.exceptions
+from websockets.asyncio.server import ServerConnection
 
 from server.game_state import GameState
 from shared.protocol import make_snapshot
+
+
+class _ProxyAwareConnection(ServerConnection):
+    """Strip an optional HAProxy/playit.gg PROXY protocol v1 header before
+    the WebSocket HTTP handshake.  The old TCP server survived this because
+    json.loads() raised and the loop just did `continue`; websockets fails
+    immediately because it expects 'GET / HTTP/1.1' as the very first bytes."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._proxy_checked = False
+        self._proxy_buf = b""
+
+    def data_received(self, data: bytes) -> None:
+        if self._proxy_checked:
+            super().data_received(data)
+            return
+
+        self._proxy_buf += data
+        nl = self._proxy_buf.find(b"\n")
+        if nl == -1:
+            return  # Haven't received the full first line yet — wait
+
+        self._proxy_checked = True
+        first_line = self._proxy_buf[: nl + 1]
+        rest = self._proxy_buf[nl + 1 :]
+        self._proxy_buf = b""
+
+        if not first_line.startswith(b"PROXY "):
+            rest = first_line + rest  # Not a PROXY header — keep the bytes
+
+        if rest:
+            super().data_received(rest)
 from shared.constants import GAME_VERSION
 
 
@@ -23,7 +57,10 @@ class GameServer:
         self._end_timer = None
 
     async def run(self):
-        async with websockets.serve(self.handle_client, self.host, self.port):
+        async with websockets.serve(
+            self.handle_client, self.host, self.port,
+            create_connection=_ProxyAwareConnection,
+        ):
             print(f"GloryDay server running on ws://{self.host}:{self.port}")
             await self.broadcast_loop()
 
