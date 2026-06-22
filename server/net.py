@@ -6,6 +6,7 @@ import json
 import websockets
 import websockets.exceptions
 from websockets.asyncio.server import ServerConnection
+from websockets.connection import State as _WsState
 
 from server.game_state import GameState
 from shared.protocol import make_snapshot
@@ -193,7 +194,7 @@ class GameServer:
 
             stale = []
             for pid, ws in list(self.sockets.items()):
-                if ws.closed:
+                if ws.state != _WsState.OPEN:
                     stale.append(pid)
                     continue
                 try:

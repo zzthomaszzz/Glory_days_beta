@@ -7,8 +7,8 @@ from shared.protocol import make_input_message, make_hero_select_message
 from shared.constants import GAME_VERSION
 
 # ── Connection config ────────────────────────────────────────────────────────
-DEV_MODE = True
-SERVER_URL = "ws://localhost:5555" if DEV_MODE else "wss://YOUR_PLAYIT_URL_HERE"
+DEV_MODE = False
+SERVER_URL = "ws://localhost:5555" if DEV_MODE else "wss://flip-observer-uneven.ngrok-free.dev"
 
 _IS_BROWSER = sys.platform == "emscripten"
 
@@ -51,7 +51,7 @@ class NetworkClient:
             self._ws = await websockets.connect(self._url)
 
     async def _connect_browser(self):
-        from js import WebSocket as JSWebSocket
+        from js import WebSocket as JSWebSocket  # type: ignore[import]
 
         self._recv_queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
@@ -142,7 +142,7 @@ class NetworkClient:
                 if self._js_ws and self._js_ws.readyState == 1:  # OPEN
                     self._js_ws.send(data)
             else:
-                if self._ws and not self._ws.closed:
+                if self._ws is not None:
                     await self._ws.send(data)
         except Exception:
             pass
