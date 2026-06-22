@@ -10,20 +10,40 @@ from shared.constants import FPS
 from client.scene import SceneMenu, VIEWPORT_W, VIEWPORT_H
 
 
+def _log(msg):
+    """Print to both stdout (xterm) and browser JS console."""
+    print(f"[GD] {msg}")
+    if sys.platform == "emscripten":
+        try:
+            from js import console
+            console.log(f"[GD] {msg}")
+        except Exception:
+            pass
+
+
 async def main():
     screen = None
     try:
+        _log("main() started")
         pygame.init()
+        _log("pygame.init() done")
+        await asyncio.sleep(0)  # let WASM finish SDL setup before set_mode
 
         if sys.platform == "emscripten":
-            # pygbag configures a 1280x720 canvas; match it exactly.
-            # (0,0)/FULLSCREEN fails silently in WASM and leaves the canvas gray.)
             screen = pygame.display.set_mode((1280, 720))
         else:
             screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 
         sw = screen.get_width()
         sh = screen.get_height()
+        _log(f"display {sw}x{sh}")
+
+        # Immediate red fill to confirm display is functional
+        screen.fill((220, 0, 0))
+        pygame.display.flip()
+        await asyncio.sleep(0)
+        _log("first flip done")
+
         pygame.display.set_caption("GloryDay")
         pygame.mouse.set_visible(True)
 
@@ -36,7 +56,9 @@ async def main():
         ui_surf   = pygame.Surface((sw, sh), pygame.SRCALPHA)
         clock     = pygame.time.Clock()
 
+        _log("creating SceneMenu")
         active_scene = SceneMenu()
+        _log("SceneMenu created — entering game loop")
 
         while active_scene is not None:
             events = pygame.event.get()
@@ -60,7 +82,7 @@ async def main():
 
     except Exception:
         err = traceback.format_exc()
-        print(err)  # also appears in pygbag xterm
+        _log(f"EXCEPTION:\n{err}")
         if screen is not None:
             try:
                 _show_error(screen, err)
