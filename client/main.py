@@ -11,35 +11,34 @@ from client.scene import SceneMenu, VIEWPORT_W, VIEWPORT_H
 
 
 async def main():
-    pygame.init()
-    # Always use FULLSCREEN so pygame fills the entire canvas (desktop and browser).
-    # In the browser pygbag sets the canvas to 1280x720; a fixed (640,400) mode
-    # only paints the top-left corner and leaves the rest black.
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-    sw = screen.get_width()
-    sh = screen.get_height()
-    pygame.display.set_caption("GloryDay")
-    pygame.mouse.set_visible(True)
-
-    scene_mod._SCREEN_W = sw
-    scene_mod._SCREEN_H = sh
-    scene_mod._SCALE_X  = sw / VIEWPORT_W
-    scene_mod._SCALE_Y  = sh / VIEWPORT_H
-
-    game_surf = pygame.Surface((VIEWPORT_W, VIEWPORT_H))
-    ui_surf   = pygame.Surface((sw, sh), pygame.SRCALPHA)
-    clock     = pygame.time.Clock()
-
+    screen = None
     try:
-        active_scene = SceneMenu()
-    except Exception:
-        _show_error(screen, traceback.format_exc())
-        pygame.display.flip()
-        await asyncio.sleep(60)
-        return
+        pygame.init()
 
-    while active_scene is not None:
-        try:
+        if sys.platform == "emscripten":
+            # pygbag configures a 1280x720 canvas; match it exactly.
+            # (0,0)/FULLSCREEN fails silently in WASM and leaves the canvas gray.)
+            screen = pygame.display.set_mode((1280, 720))
+        else:
+            screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+
+        sw = screen.get_width()
+        sh = screen.get_height()
+        pygame.display.set_caption("GloryDay")
+        pygame.mouse.set_visible(True)
+
+        scene_mod._SCREEN_W = sw
+        scene_mod._SCREEN_H = sh
+        scene_mod._SCALE_X  = sw / VIEWPORT_W
+        scene_mod._SCALE_Y  = sh / VIEWPORT_H
+
+        game_surf = pygame.Surface((VIEWPORT_W, VIEWPORT_H))
+        ui_surf   = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        clock     = pygame.time.Clock()
+
+        active_scene = SceneMenu()
+
+        while active_scene is not None:
             events = pygame.event.get()
             dt = clock.tick(FPS) / 1000.0
 
@@ -55,14 +54,20 @@ async def main():
 
             active_scene = active_scene.next_scene
             pygame.display.flip()
-        except Exception:
-            _show_error(screen, traceback.format_exc())
-            pygame.display.flip()
-            await asyncio.sleep(60)
-            return
-        await asyncio.sleep(0)
+            await asyncio.sleep(0)
 
-    pygame.quit()
+        pygame.quit()
+
+    except Exception:
+        err = traceback.format_exc()
+        print(err)  # also appears in pygbag xterm
+        if screen is not None:
+            try:
+                _show_error(screen, err)
+                pygame.display.flip()
+            except Exception:
+                pass
+        await asyncio.sleep(120)
 
 
 def _show_error(screen, err_text):
