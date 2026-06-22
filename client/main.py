@@ -1,5 +1,6 @@
 # Async game loop: initialises pygame, runs the active scene, and drives the network coroutine
 import asyncio
+import sys
 
 import pygame
 
@@ -10,7 +11,10 @@ from client.scene import SceneMenu, VIEWPORT_W, VIEWPORT_H
 
 async def main():
     pygame.init()
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    if sys.platform == "emscripten":
+        screen = pygame.display.set_mode((VIEWPORT_W, VIEWPORT_H))
+    else:
+        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     sw = screen.get_width()
     sh = screen.get_height()
     pygame.display.set_caption("GloryDay")
