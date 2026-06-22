@@ -3,15 +3,10 @@ import asyncio
 import sys
 import traceback
 
-import pygame
-
-import client.scene as scene_mod
-from shared.constants import FPS
-from client.scene import SceneMenu, VIEWPORT_W, VIEWPORT_H
+import pygame  # safe to import at module level in all environments
 
 
 def _log(msg):
-    """Print to both stdout (xterm) and browser JS console."""
     print(f"[GD] {msg}")
     if sys.platform == "emscripten":
         try:
@@ -22,12 +17,14 @@ def _log(msg):
 
 
 async def main():
+    # All client.* imports are deferred to here so any ImportError can be
+    # caught and shown on screen rather than silently disappearing into xterm.
     screen = None
     try:
-        _log("main() started")
+        _log("main() start")
         pygame.init()
         _log("pygame.init() done")
-        await asyncio.sleep(0)  # let WASM finish SDL setup before set_mode
+        await asyncio.sleep(0)  # let WASM finish SDL setup
 
         if sys.platform == "emscripten":
             screen = pygame.display.set_mode((1280, 720))
@@ -38,14 +35,17 @@ async def main():
         sh = screen.get_height()
         _log(f"display {sw}x{sh}")
 
-        # Immediate red fill to confirm display is functional
+        # Paint red immediately to confirm display is functional
         screen.fill((220, 0, 0))
         pygame.display.flip()
         await asyncio.sleep(0)
         _log("first flip done")
 
-        pygame.display.set_caption("GloryDay")
-        pygame.mouse.set_visible(True)
+        _log("importing scene...")
+        import client.scene as scene_mod
+        from client.scene import SceneMenu, VIEWPORT_W, VIEWPORT_H
+        from shared.constants import FPS
+        _log("imports done")
 
         scene_mod._SCREEN_W = sw
         scene_mod._SCREEN_H = sh
@@ -56,9 +56,9 @@ async def main():
         ui_surf   = pygame.Surface((sw, sh), pygame.SRCALPHA)
         clock     = pygame.time.Clock()
 
-        _log("creating SceneMenu")
+        _log("creating SceneMenu...")
         active_scene = SceneMenu()
-        _log("SceneMenu created — entering game loop")
+        _log("entering game loop")
 
         while active_scene is not None:
             events = pygame.event.get()
@@ -109,4 +109,6 @@ def _show_error(screen, err_text):
 
 
 if __name__ == "__main__":
+    # Local desktop run — restore module-level imports for PyInstaller
+    import client.scene as _scene  # noqa: F401 (tells PyInstaller to bundle it)
     asyncio.run(main())
